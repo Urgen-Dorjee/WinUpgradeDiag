@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # WinUpgradeDiag
 
 A technician-run diagnostic for failed ConfigMgr Windows 10 → Windows 11 in-place upgrades.
@@ -54,3 +55,6 @@ docs/
 
 Provided as-is. Not affiliated with or endorsed by Microsoft. Not a substitute for vendor
 support. Test in a lab before use on production endpoints.
+=======
+# WinUpgradeDiag
+>>>>>>> f4f67c4a4b8e531086504861f426fba37251a4ab
