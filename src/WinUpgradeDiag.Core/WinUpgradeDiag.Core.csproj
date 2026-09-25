@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>WinUpgradeDiag.Core</RootNamespace>
+    <AssemblyName>WinUpgradeDiag.Core</AssemblyName>
+    <!-- In-box .NET Framework assemblies only. No NuGet packages ship in this project. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Management" />
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+  </ItemGroup>
+
+</Project>

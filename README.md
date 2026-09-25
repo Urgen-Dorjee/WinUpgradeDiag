@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # WinUpgradeDiag
 
 A technician-run diagnostic for failed ConfigMgr Windows 10 → Windows 11 in-place upgrades.
@@ -7,7 +6,8 @@ Run it on the affected machine. It reads every relevant log already on disk — 
 rollback logs that normally need `takeown` — correlates them onto one timeline, and shows the
 root cause with the evidence beside it.
 
-**Status: design complete, implementation not started.** See `docs/DESIGN.md`.
+**Status: Phase 1 implemented** — discovery, live-state collection, log manifest, viewer, and
+export. No verdicts yet; see `docs/DESIGN.md` §7 for the phase plan.
 
 ## Why
 
@@ -29,7 +29,7 @@ half an hour of opening logs by hand. This automates it.
 
 | Document | Contents |
 | --- | --- |
-| `CLAUDE.md` | Standing project context and constraints |
+| `AGENTS.md` | Standing project context and constraints |
 | `docs/DESIGN.md` | Full specification: architecture, data sources, UI, testing, phases |
 | `docs/RULES.md` | Diagnostic rule catalogue with error codes and actions |
 | `docs/SECURITY.md` | Security posture, PHI handling, distribution, governance |
@@ -37,16 +37,31 @@ half an hour of opening logs by hand. This automates it.
 ## Layout
 
 ```
-src/WinUpgradeDiag.Core/   collectors, parsers, rules, report
-src/WinUpgradeDiag.App/    WPF UI
-src/WinUpgradeDiag.Cli/    console head for fleet use
-tests/                     xUnit + redacted log fixtures
+WinUpgradeDiag.sln
+src/WinUpgradeDiag.Core/   discovery, collectors, redaction, report export (all logic; only project with tests)
+src/WinUpgradeDiag.App/    WPF UI, thin, no business logic
+src/WinUpgradeDiag.Cli/    console head for ConfigMgr Run Script
+tests/WinUpgradeDiag.Tests/  xUnit tests + fixture logs in tests/fixtures/
 docs/
 ```
 
+## Building
+
+Requires Windows with the .NET Framework 4.8 targeting pack (Visual Studio 2019+ or the .NET
+SDK's MSBuild). All four projects are SDK-style and target `net48`; only the test project pulls
+in NuGet packages (xUnit), and only for the build machine — nothing ships in the `.exe`.
+
+```
+dotnet build WinUpgradeDiag.sln
+dotnet test tests/WinUpgradeDiag.Tests/WinUpgradeDiag.Tests.csproj
+```
+
+The App and CLI projects require elevation to run for real (protected-log reads and WMI), so
+run the built `.exe` as Administrator.
+
 ## Build order
 
-1. Collector, manifest, log viewer, export — no verdicts
+1. Discover, collect, manifest, log viewer, export — no verdicts *(this phase)*
 2. Parsers, correlation, rules engine, verdict
 3. CLI head and ConfigMgr integration, JSON aggregation
 4. Remediation actions
@@ -55,6 +70,3 @@ docs/
 
 Provided as-is. Not affiliated with or endorsed by Microsoft. Not a substitute for vendor
 support. Test in a lab before use on production endpoints.
-=======
-# WinUpgradeDiag
->>>>>>> f4f67c4a4b8e531086504861f426fba37251a4ab
