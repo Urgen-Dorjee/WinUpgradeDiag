@@ -35,7 +35,7 @@ what this tool automates.
 
 ## 3. Constraints
 
-See `CLAUDE.md` for the enforced list. In summary: .NET Framework 4.8, WPF, no NuGet, single
+See `AGENTS.md` for the enforced list. In summary: .NET Framework 4.8, WPF, no NuGet, single
 `.exe`, zero network, read-only by default, streaming log reads, PHI-safe exports, admin
 required.
 

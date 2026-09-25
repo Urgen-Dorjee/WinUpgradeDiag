@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>WinUpgradeDiag.App</RootNamespace>
+    <AssemblyName>WinUpgradeDiag</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WinUpgradeDiag.Core\WinUpgradeDiag.Core.csproj" />
+  </ItemGroup>
+
+</Project>
