@@ -54,5 +54,59 @@ namespace WinUpgradeDiag.Tests.Redaction
             Assert.Null(_redactor.Redact(null));
             Assert.Equal("", _redactor.Redact(""));
         }
+
+        // ---- redaction must not destroy the evidence the report exists to carry ----
+
+        [Fact]
+        public void A_profile_folder_named_after_a_panther_component_does_not_shred_the_log_text()
+        {
+            // MIG is a real Panther component column (DESIGN.md §4.3). If a machine happens to
+            // have a profile folder called MIG, every component column in the report would
+            // otherwise be rewritten to <user>.
+            var redactor = new Redactor("WS-TEST-0042", new[] { "MIG", "SP", "CONX" });
+
+            var line = redactor.Redact("2026-09-18 12:10:17, Error  MIG  Failure in SP during CONX phase");
+
+            Assert.Equal("2026-09-18 12:10:17, Error  MIG  Failure in SP during CONX phase", line);
+        }
+
+        [Fact]
+        public void Very_short_profile_names_are_not_treated_as_global_tokens()
+        {
+            // "IT" appearing mid-sentence must survive; rewriting two letters everywhere is
+            // far more damaging than leaving a two-letter account name in place.
+            var redactor = new Redactor("PC1", new[] { "IT", "sv" });
+
+            Assert.Equal("The IT team reported sv errors on PC1",
+                redactor.Redact("The IT team reported sv errors on PC1"));
+        }
+
+        [Fact]
+        public void A_short_profile_name_is_still_redacted_inside_a_profile_path()
+        {
+            // Declining to treat "IT" as a global token must not leak C:\Users\IT\...
+            var redactor = new Redactor("WS-TEST-0042", new[] { "IT" });
+
+            Assert.Equal(@"C:\Users\<user>\Desktop\notes.txt",
+                redactor.Redact(@"C:\Users\IT\Desktop\notes.txt"));
+        }
+
+        [Fact]
+        public void Common_log_words_are_never_redacted_even_if_a_profile_matches_them()
+        {
+            var redactor = new Redactor("WS-TEST-0042", new[] { "Administrator", "Error", "System" });
+
+            var line = redactor.Redact("Error: System reported a failure to Administrator");
+
+            Assert.Equal("Error: System reported a failure to Administrator", line);
+        }
+
+        [Fact]
+        public void A_real_account_name_of_the_minimum_length_is_still_redacted()
+        {
+            var redactor = new Redactor("WS-TEST-0042", new[] { "asmi" });
+
+            Assert.Equal("user=<user>", redactor.Redact("user=asmi"));
+        }
     }
 }

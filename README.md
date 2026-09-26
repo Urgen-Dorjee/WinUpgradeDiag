@@ -6,8 +6,9 @@ Run it on the affected machine. It reads every relevant log already on disk — 
 rollback logs that normally need `takeown` — correlates them onto one timeline, and shows the
 root cause with the evidence beside it.
 
-**Status: Phase 1 implemented** — discovery, live-state collection, log manifest, viewer, and
-export. No verdicts yet; see `docs/DESIGN.md` §7 for the phase plan.
+**Status: Phase 1 implemented** — discovery, live-state collection, log manifest, viewer with
+whole-file streaming search, and export. No verdicts yet; see `docs/DESIGN.md` §7 for the phase
+plan.
 
 ## Why
 
@@ -56,8 +57,26 @@ dotnet build WinUpgradeDiag.sln
 dotnet test tests/WinUpgradeDiag.Tests/WinUpgradeDiag.Tests.csproj
 ```
 
-The App and CLI projects require elevation to run for real (protected-log reads and WMI), so
-run the built `.exe` as Administrator.
+The App requires elevation (its manifest asks for it) because protected-log reads and some WMI
+queries need an administrator token. The CLI deliberately runs `asInvoker`: it starts at whatever
+privilege the caller has, reports which logs it could not read, and returns exit code 4 so an
+unelevated run is detectable rather than silent. Run either as Administrator for full coverage.
+
+## Searching a huge log
+
+`setupact.log` is routinely 100–700 MB. Notepad cannot open a file that size — it reads the whole
+thing into memory — and the viewer's tail window only covers the last couple of megabytes, well
+under 1% of a large file. Both heads therefore stream the file instead:
+
+```
+WinUpgradeDiag.Cli --find 0xC1900101
+WinUpgradeDiag.Cli --find "DRIVER_PNP_WATCHDOG" --in "C:\$WINDOWS.~BT\Sources\Rollback\setupact.log"
+```
+
+Each hit is printed with its line number and surrounding context, and the summary states whether
+the whole file was covered or the scan stopped early. Measured on a 750 MB / 7-million-line
+`setupact.log`: about 7 seconds end to end, with the managed heap flat at a few MB regardless of
+file size. In the WPF app the same thing is the **Search whole file** button on the Logs tab.
 
 ## Build order
 

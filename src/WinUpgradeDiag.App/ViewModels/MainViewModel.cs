@@ -28,11 +28,23 @@ namespace WinUpgradeDiag.App.ViewModels
         private DiagnosticContext _context;
         private string _summary = "";
 
+        private const int FilterDebounceMilliseconds = 180;
+
         private ManifestRow _selectedManifestRow;
-        private IReadOnlyList<string> _viewerAllLines = new List<string>();
+        private TailReadResult _tail;
+        private IReadOnlyList<LogViewLine> _viewerLines = new List<LogViewLine>();
         private string _viewerFilter = "";
         private string _viewerStatus = "Select a log above to view its most recent lines.";
         private int _viewerLoadVersion;
+
+        /// <summary>True when the tail window happened to cover the entire file, which is the only
+        /// case where the viewer can name absolute line numbers.</summary>
+        private bool _tailIsWholeFile;
+
+        private CancellationTokenSource _filterDebounceCts;
+        private CancellationTokenSource _searchCts;
+        private bool _isSearching;
+        private double _searchProgress;
 
         private string _outputRoot = ReportExporter.DefaultOutputRoot;
         private bool _exportHtml = true;
@@ -46,15 +58,21 @@ namespace WinUpgradeDiag.App.ViewModels
         public MainViewModel()
         {
             RunCommand = new RelayCommand(async () => await RunAsync(), () => State != RunState.Running);
-            CancelCommand = new RelayCommand(() => _cts?.Cancel(), () => State == RunState.Running);
+            CancelCommand = new RelayCommand(CancelRun, () => State == RunState.Running);
             ExportCommand = new RelayCommand(async () => await ExportAsync(), () => _context != null && !_isExporting);
             OpenExportFolderCommand = new RelayCommand(OpenExportFolder, () => _lastExportDirectory != null);
+            SearchWholeFileCommand = new RelayCommand(
+                async () => await SearchWholeFileAsync(),
+                () => !_isSearching && _selectedManifestRow != null && !string.IsNullOrWhiteSpace(_viewerFilter));
+            CancelSearchCommand = new RelayCommand(() => _searchCts?.Cancel(), () => _isSearching);
         }
 
         public RelayCommand RunCommand { get; }
         public RelayCommand CancelCommand { get; }
         public RelayCommand ExportCommand { get; }
         public RelayCommand OpenExportFolderCommand { get; }
+        public RelayCommand SearchWholeFileCommand { get; }
+        public RelayCommand CancelSearchCommand { get; }
 
         public string ToolVersion => "v" + DiagnosticRunner.ToolVersion;
 
@@ -112,12 +130,27 @@ namespace WinUpgradeDiag.App.ViewModels
             }
             finally
             {
-                _cts.Dispose();
+                // Null the field before disposing: CancelCommand reads it, and a Cancel click
+                // landing between Dispose() and the null would throw ObjectDisposedException.
+                var finished = _cts;
                 _cts = null;
+                finished.Dispose();
             }
 
             PopulateResults();
             State = RunState.Results;
+        }
+
+        private void CancelRun()
+        {
+            try
+            {
+                _cts?.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // The run completed between the button being enabled and the click arriving.
+            }
         }
 
         // ---------------- Results ----------------
@@ -201,7 +234,16 @@ namespace WinUpgradeDiag.App.ViewModels
 
         // ---------------- Log viewer ----------------
 
-        public ObservableCollection<string> ViewerLines { get; } = new ObservableCollection<string>();
+        /// <summary>
+        /// Swapped as one batch rather than mutated per item. Rebuilding a 5,000-line tail through
+        /// an ObservableCollection one Add at a time raises 5,000 change notifications, and the
+        /// filter box does that on every keystroke; replacing the list raises exactly one.
+        /// </summary>
+        public IReadOnlyList<LogViewLine> ViewerLines
+        {
+            get => _viewerLines;
+            private set => Set(ref _viewerLines, value);
+        }
 
         public ManifestRow SelectedManifestRow
         {
@@ -210,6 +252,9 @@ namespace WinUpgradeDiag.App.ViewModels
             {
                 if (Set(ref _selectedManifestRow, value))
                 {
+                    // SearchWholeFileCommand needs a selected log; re-evaluate rather than waiting
+                    // for whatever UI gesture happens to raise RequerySuggested next.
+                    System.Windows.Input.CommandManager.InvalidateRequerySuggested();
                     _ = LoadViewerAsync(value);
                 }
             }
@@ -222,7 +267,8 @@ namespace WinUpgradeDiag.App.ViewModels
             {
                 if (Set(ref _viewerFilter, value))
                 {
-                    ApplyViewerFilter();
+                    _ = DebounceFilterAsync();
+                    System.Windows.Input.CommandManager.InvalidateRequerySuggested();
                 }
             }
         }
@@ -233,11 +279,31 @@ namespace WinUpgradeDiag.App.ViewModels
             private set => Set(ref _viewerStatus, value);
         }
 
+        public bool IsSearching
+        {
+            get => _isSearching;
+            private set
+            {
+                if (Set(ref _isSearching, value))
+                {
+                    System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+                }
+            }
+        }
+
+        /// <summary>Whole-file search progress, 0 to 1. Meaningful only while searching.</summary>
+        public double SearchProgress
+        {
+            get => _searchProgress;
+            private set => Set(ref _searchProgress, value);
+        }
+
         private async Task LoadViewerAsync(ManifestRow row)
         {
             var version = ++_viewerLoadVersion;
-            _viewerAllLines = new List<string>();
-            ViewerLines.Clear();
+            _tail = null;
+            _tailIsWholeFile = false;
+            ViewerLines = new List<LogViewLine>();
 
             if (row == null)
             {
@@ -266,10 +332,28 @@ namespace WinUpgradeDiag.App.ViewModels
                     return; // a newer selection superseded this one
                 }
 
-                _viewerAllLines = result.Lines;
+                _tail = result;
+                _tailIsWholeFile = !result.WindowTruncatedFromStart && !result.LineCountTruncated;
                 ApplyViewerFilter();
-                ViewerStatus = $"Showing the last {result.Lines.Count:N0} lines of {HtmlReportWriter.Size(result.FileSizeBytes)}" +
-                               (result.WindowTruncatedFromStart || result.LineCountTruncated ? " (tail window; earlier content not loaded)." : ".");
+
+                if (_tailIsWholeFile)
+                {
+                    ViewerStatus = $"Showing all {result.Lines.Count:N0} lines of {HtmlReportWriter.Size(result.FileSizeBytes)}.";
+                }
+                else
+                {
+                    // Be explicit about how little of a huge log the tail covers, and point at the
+                    // thing that does cover it. A 700 MB setupact.log keeps the failure thousands
+                    // of lines before the end, and silently showing 0.3% of it invites the wrong
+                    // conclusion (DESIGN.md §8).
+                    var covered = result.FileSizeBytes > 0
+                        ? (result.FileSizeBytes - result.WindowStartOffset) * 100.0 / result.FileSizeBytes
+                        : 100.0;
+                    ViewerStatus =
+                        $"Showing the last {result.Lines.Count:N0} lines — about {covered:0.#}% of " +
+                        $"{HtmlReportWriter.Size(result.FileSizeBytes)}. Earlier content is not loaded; " +
+                        "use Search whole file to scan all of it.";
+                }
             }
             catch (Exception ex)
             {
@@ -280,17 +364,125 @@ namespace WinUpgradeDiag.App.ViewModels
             }
         }
 
+        /// <summary>
+        /// Waits out a burst of typing before re-filtering. Without this every keystroke rebuilds
+        /// the whole rendered list, which is plainly visible on a 5,000-line tail.
+        /// </summary>
+        private async Task DebounceFilterAsync()
+        {
+            var cts = new CancellationTokenSource();
+            var previous = Interlocked.Exchange(ref _filterDebounceCts, cts);
+            if (previous != null)
+            {
+                // Cancelled but deliberately not disposed: the awaiting Task.Delay below may still
+                // be unwinding on its own token registration. These are cheap and short-lived.
+                previous.Cancel();
+            }
+
+            try
+            {
+                await Task.Delay(FilterDebounceMilliseconds, cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return; // superseded by a later keystroke
+            }
+
+            ApplyViewerFilter();
+        }
+
         private void ApplyViewerFilter()
         {
-            ViewerLines.Clear();
-            var filter = _viewerFilter?.Trim();
-            foreach (var line in _viewerAllLines)
+            if (_tail == null)
             {
-                if (string.IsNullOrEmpty(filter) || line.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    ViewerLines.Add(line);
-                }
+                ViewerLines = new List<LogViewLine>();
+                return;
             }
+
+            var filter = _viewerFilter?.Trim();
+            var lines = LogSearchView.FromTail(_tail, filter);
+            ViewerLines = lines;
+
+            if (!string.IsNullOrEmpty(filter) && _selectedManifestRow != null)
+            {
+                var matches = 0;
+                foreach (var line in lines)
+                {
+                    if (line.IsMatch)
+                    {
+                        matches++;
+                    }
+                }
+
+                ViewerStatus = $"{matches:N0} line(s) in the loaded tail contain \"{filter}\"" +
+                               (_tailIsWholeFile ? "." : " — use Search whole file to scan the rest.");
+            }
+        }
+
+        // ---------------- Whole-file search ----------------
+
+        private async Task SearchWholeFileAsync()
+        {
+            var row = _selectedManifestRow;
+            var query = _viewerFilter?.Trim();
+
+            if (row == null)
+            {
+                ViewerStatus = "Choose a log above first.";
+                return;
+            }
+            if (string.IsNullOrEmpty(query))
+            {
+                ViewerStatus = "Type what to search for, then press Search whole file.";
+                return;
+            }
+            if (!row.Entry.Exists)
+            {
+                ViewerStatus = "This log is not present on the machine.";
+                return;
+            }
+
+            string reason;
+            if (!LogViewerPolicy.CanRender(row.Path, out reason))
+            {
+                ViewerStatus = reason;
+                return;
+            }
+
+            var cts = new CancellationTokenSource();
+            _searchCts = cts;
+            IsSearching = true;
+            SearchProgress = 0;
+            ViewerStatus = $"Searching all of {row.Size} for \"{query}\" …";
+
+            var path = row.Path;
+            var progress = new Progress<double>(p => SearchProgress = p);
+
+            try
+            {
+                var result = await Task.Run(
+                    () => new LogSearcher().Search(
+                        path, query, LogSearcher.DefaultMaxMatches, LogSearcher.DefaultContextLines, progress, cts.Token));
+
+                RenderSearchResult(result, query);
+            }
+            catch (Exception ex)
+            {
+                ViewerStatus = "Could not search this log: " + ex.Message;
+            }
+            finally
+            {
+                _searchCts = null;
+                cts.Dispose();
+                IsSearching = false;
+                SearchProgress = 0;
+            }
+        }
+
+        private void RenderSearchResult(LogSearchResult result, string query)
+        {
+            ViewerLines = LogSearchView.FromSearch(result);
+            ViewerStatus = LogSearchView.DescribeSearch(result, query, LogSearcher.DefaultMaxMatches);
         }
 
         // ---------------- Export ----------------
@@ -329,6 +521,11 @@ namespace WinUpgradeDiag.App.ViewModels
                 if (result.EvidenceZipPath != null)
                 {
                     lines.Add("The evidence zip is NOT redacted — keep it on internal systems only.");
+                    if (result.PartiallyCapturedEvidence.Count > 0)
+                    {
+                        lines.Add(result.PartiallyCapturedEvidence.Count +
+                                  " log(s) were too large to include whole — only the end of each was captured. See README.txt inside the zip.");
+                    }
                     if (result.SkippedEvidence.Count > 0)
                     {
                         lines.Add(result.SkippedEvidence.Count + " file(s) left out of the zip; see README.txt inside it.");

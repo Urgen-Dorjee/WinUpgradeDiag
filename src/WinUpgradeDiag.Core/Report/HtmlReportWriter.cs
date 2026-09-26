@@ -100,11 +100,13 @@ namespace WinUpgradeDiag.Core.Report
             }
             sb.AppendLine("</table>");
 
-            sb.AppendLine("<h3>Filter drivers</h3><table><tr><th>Service</th><th>Display name</th><th>Altitude group</th><th>Image</th></tr>");
+            sb.AppendLine("<h3>Filter drivers</h3><table><tr><th>Service</th><th>Display name</th><th>Altitude group</th><th>Start</th><th>Image</th></tr>");
             foreach (var f in s0.FilterDrivers ?? new List<FilterDriverInfo>())
             {
                 sb.Append("<tr><td>").Append(E(f.ServiceName)).Append("</td><td>").Append(E(f.DisplayName))
-                  .Append("</td><td>").Append(E(f.AltitudeGroup)).Append("</td><td>").Append(E(r(f.ImagePath))).AppendLine("</td></tr>");
+                  .Append("</td><td>").Append(E(f.AltitudeGroup))
+                  .Append("</td><td>").Append(E(f.StartModeName))
+                  .Append("</td><td>").Append(E(r(f.ImagePath))).AppendLine("</td></tr>");
             }
             sb.AppendLine("</table>");
 
@@ -116,9 +118,12 @@ namespace WinUpgradeDiag.Core.Report
                 sb.Append("<tr").Append(cls).Append("><td>").Append(E(m.Source.DisplayName))
                   .Append("</td><td class=\"path\">").Append(E(r(m.ResolvedPath)))
                   .Append("</td><td>").Append(YesNo(m.Exists))
-                  .Append("</td><td>").Append(m.Exists ? E(Size(m.SizeBytes)) : "")
+                  .Append("</td><td>").Append(m.SizeKnown ? E(Size(m.SizeBytes)) : "")
                   .Append("</td><td>").Append(E(Fmt(m.LastWriteTimeUtc)))
-                  .Append("</td><td>").Append(!m.Exists ? "" : m.Readable ? "Yes" : "<span class=\"warn\">No</span> " + E(r(m.AccessError)))
+                  .Append("</td><td>").Append(
+                      m.Readable ? "Yes"
+                      : !m.Exists && !m.RequiresPrivilegedRead ? ""
+                      : "<span class=\"warn\">No</span> " + E(r(m.AccessError)))
                   .AppendLine("</td></tr>");
             }
             sb.AppendLine("</table>");

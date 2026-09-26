@@ -12,6 +12,14 @@ namespace WinUpgradeDiag.Core.Collect
         public string DisplayName { get; set; }
         public string ImagePath { get; set; }
         public string AltitudeGroup { get; set; }
+
+        /// <summary>Raw Start value from the service key (0 Boot .. 4 Disabled).</summary>
         public int? StartMode { get; set; }
+
+        /// <summary>
+        /// <see cref="StartMode"/> as the word it stands for. A technician reading "Boot" learns
+        /// that this filter loads before almost anything else; reading "0" learns nothing.
+        /// </summary>
+        public string StartModeName => StorageEnums.StartMode(StartMode);
     }
 }

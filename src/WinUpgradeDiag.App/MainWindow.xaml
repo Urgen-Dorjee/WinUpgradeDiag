@@ -95,18 +95,69 @@
                                 </DataGrid.Columns>
                             </DataGrid>
 
-                            <DockPanel Grid.Row="1" Margin="0,8,0,4">
-                                <TextBlock Text="Filter:" VerticalAlignment="Center" Margin="0,0,6,0" />
-                                <TextBox Width="260" Text="{Binding ViewerFilter, UpdateSourceTrigger=PropertyChanged}" />
+                            <StackPanel Grid.Row="1" Margin="0,8,0,4">
+                                <DockPanel>
+                                    <TextBlock Text="Find:" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                    <Button DockPanel.Dock="Right" Content="Cancel search"
+                                            Command="{Binding CancelSearchCommand}" Padding="10,3" Margin="6,0,0,0"
+                                            Visibility="{Binding IsSearching, Converter={StaticResource BoolToVisibility}}" />
+                                    <Button DockPanel.Dock="Right" Content="Search whole file"
+                                            Command="{Binding SearchWholeFileCommand}" Padding="10,3" Margin="6,0,0,0"
+                                            ToolTip="Streams the entire log, however large, without loading it into memory." />
+                                    <TextBox Text="{Binding ViewerFilter, UpdateSourceTrigger=PropertyChanged}" />
+                                </DockPanel>
+
+                                <!-- Determinate: on a 700 MB log the technician needs to see it advancing. -->
+                                <ProgressBar Height="4" Margin="0,6,0,0" Minimum="0" Maximum="1"
+                                             Value="{Binding SearchProgress, Mode=OneWay}"
+                                             Visibility="{Binding IsSearching, Converter={StaticResource BoolToVisibility}}" />
+
                                 <TextBlock Text="{Binding ViewerStatus, Mode=OneWay}" Foreground="#555"
-                                           VerticalAlignment="Center" Margin="12,0,0,0" TextTrimming="CharacterEllipsis" />
-                            </DockPanel>
+                                           Margin="0,6,0,0" TextWrapping="Wrap" />
+                            </StackPanel>
 
                             <ListBox Grid.Row="2" ItemsSource="{Binding ViewerLines}"
                                      FontFamily="{StaticResource MonoFont}" FontSize="12"
                                      VirtualizingStackPanel.IsVirtualizing="True"
                                      VirtualizingStackPanel.VirtualizationMode="Recycling"
-                                     ScrollViewer.HorizontalScrollBarVisibility="Auto" />
+                                     ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                     ScrollViewer.CanContentScroll="True"
+                                     HorizontalContentAlignment="Stretch">
+                                <ListBox.ItemContainerStyle>
+                                    <Style TargetType="ListBoxItem">
+                                        <Setter Property="Padding" Value="0" />
+                                        <Setter Property="MinHeight" Value="0" />
+                                    </Style>
+                                </ListBox.ItemContainerStyle>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="72" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{Binding LineNumber, Mode=OneWay, StringFormat={}{0:N0}}"
+                                                       Foreground="#9AA0A6" TextAlignment="Right" Margin="0,0,10,0" />
+                                            <TextBlock Grid.Column="1" Text="{Binding Text, Mode=OneWay}">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsMatch}" Value="True">
+                                                                <Setter Property="FontWeight" Value="Bold" />
+                                                                <Setter Property="Background" Value="#FFF3C4" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding IsGap}" Value="True">
+                                                                <Setter Property="Foreground" Value="#9AA0A6" />
+                                                                <Setter Property="FontStyle" Value="Italic" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
                         </Grid>
                     </TabItem>
 
@@ -157,6 +208,7 @@
                                         <DataGridTextColumn Header="Service" Binding="{Binding ServiceName, Mode=OneWay}" Width="160" />
                                         <DataGridTextColumn Header="Display name" Binding="{Binding DisplayName, Mode=OneWay}" Width="220" />
                                         <DataGridTextColumn Header="Altitude group" Binding="{Binding AltitudeGroup, Mode=OneWay}" Width="200" />
+                                        <DataGridTextColumn Header="Start" Binding="{Binding StartModeName, Mode=OneWay}" Width="80" />
                                         <DataGridTextColumn Header="Image" Binding="{Binding ImagePath, Mode=OneWay}" Width="*" />
                                     </DataGrid.Columns>
                                 </DataGrid>

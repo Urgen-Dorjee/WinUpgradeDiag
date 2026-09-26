@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using WinUpgradeDiag.Core.Native;
 
 namespace WinUpgradeDiag.Core.Discovery
 {
@@ -77,7 +78,12 @@ namespace WinUpgradeDiag.Core.Discovery
         {
             if (!File.Exists(path))
             {
-                return LogManifestEntry.Missing(source, path);
+                // File.Exists returns false both for "not there" and for "you may not traverse the
+                // parent directory", and $WINDOWS.~BT is the second case on a machine where the
+                // rollback logs matter most. Ask the privileged probe which one it is before
+                // recording the log as absent — reporting unreadable evidence as "nothing found"
+                // is the specific failure DESIGN.md §8 warns about.
+                return ProbeForHiddenFile(source, path);
             }
 
             var info = new FileInfo(path);
@@ -100,6 +106,71 @@ namespace WinUpgradeDiag.Core.Discovery
             TryStandardOpen(path, out readable, out requiresPrivilegedRead, out accessError);
 
             return LogManifestEntry.Found(source, path, size, lastWrite, readable, requiresPrivilegedRead, accessError);
+        }
+
+        /// <summary>
+        /// Distinguishes a genuinely absent file from one hidden behind a directory we cannot list.
+        /// </summary>
+        private static LogManifestEntry ProbeForHiddenFile(LogSource source, string path)
+        {
+            string probeError;
+            ProtectedFileReader.ProbeResult probe;
+            try
+            {
+                probe = ProtectedFileReader.Probe(path, out probeError);
+            }
+            catch (Exception ex)
+            {
+                // The probe itself must never be the thing that breaks discovery.
+                return LogManifestEntry.Unresolved(source, path, false, "Could not probe this path: " + ex.Message);
+            }
+
+            switch (probe)
+            {
+                case ProtectedFileReader.ProbeResult.NotFound:
+                    return LogManifestEntry.Missing(source, path);
+
+                case ProtectedFileReader.ProbeResult.AccessDenied:
+                    return LogManifestEntry.PresentButUnreadable(source, path,
+                        "Present but unreadable — " + (probeError ?? "access denied"));
+
+                case ProtectedFileReader.ProbeResult.Readable:
+                    // Readable only via the privileged path: the file is really there, even though
+                    // File.Exists said otherwise, so record it rather than dropping it.
+                    return TryDescribePrivileged(source, path);
+
+                default:
+                    return LogManifestEntry.Unresolved(source, path, false, probeError);
+            }
+        }
+
+        /// <summary>
+        /// Reads size and timestamp for a file only reachable with backup privilege.
+        /// </summary>
+        private static LogManifestEntry TryDescribePrivileged(LogSource source, string path)
+        {
+            try
+            {
+                using (var stream = ProtectedFileReader.OpenForPrivilegedRead(path))
+                {
+                    var lastWrite = DateTime.MinValue;
+                    try
+                    {
+                        lastWrite = File.GetLastWriteTimeUtc(path);
+                    }
+                    catch (Exception)
+                    {
+                        // Size alone is still worth reporting.
+                    }
+
+                    return LogManifestEntry.Found(source, path, stream.Length, lastWrite, true, true, null);
+                }
+            }
+            catch (Exception ex)
+            {
+                return LogManifestEntry.Unresolved(source, path, true,
+                    "Present but could not be opened: " + ex.Message);
+            }
         }
 
         private static void TryStandardOpen(

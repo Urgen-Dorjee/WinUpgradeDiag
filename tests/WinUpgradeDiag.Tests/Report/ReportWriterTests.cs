@@ -112,7 +112,7 @@ namespace WinUpgradeDiag.Tests.Report
                 var context = ContextWith(tmp, out log, out dump);
                 var zipPath = Path.Combine(tmp.Path, "evidence.zip");
 
-                var skipped = EvidenceBundleWriter.Write(context, zipPath);
+                var bundle = EvidenceBundleWriter.Write(context, zipPath);
 
                 using (var zip = ZipFile.OpenRead(zipPath))
                 {
@@ -122,7 +122,96 @@ namespace WinUpgradeDiag.Tests.Report
                     Assert.Contains("README.txt", names);
                     Assert.DoesNotContain(names, n => n.EndsWith(".dmp", StringComparison.OrdinalIgnoreCase));
                 }
-                Assert.Contains(skipped, s => s.Contains("091826-01.dmp"));
+                Assert.Contains(bundle.Omitted, s => s.Contains("091826-01.dmp"));
+                Assert.Empty(bundle.PartiallyCaptured);
+            }
+        }
+
+        [Fact]
+        public void An_oversized_log_has_its_tail_captured_rather_than_being_dropped()
+        {
+            using (var tmp = new TempDirectory())
+            {
+                // A real machine carries a 700 MB setupact.log. Dropping it from an escalation
+                // bundle loses the primary evidence, so the end of it must survive instead.
+                var big = Path.Combine(tmp.Path, "setupact.log");
+                using (var writer = new StreamWriter(big))
+                {
+                    for (int i = 1; i <= 20000; i++)
+                    {
+                        writer.WriteLine("2026-09-18 12:10:17, Info  SP  progress line " + i);
+                    }
+                    writer.WriteLine("2026-09-18 12:10:17, Error SP  the failure at the very end");
+                }
+
+                var source = new LogSource("setup", LogSourceCategory.SetupCurrent, "setupact.log", "", big);
+                var context = new DiagnosticContext
+                {
+                    ToolVersion = "0.1.0-test",
+                    StartedAtUtc = new DateTime(2026, 9, 18, 14, 29, 0, DateTimeKind.Utc),
+                    Manifest = new LogManifestBuilder().Build(new[] { source }),
+                    SystemState = new SystemState { MachineName = "WS-TEST-0042" }
+                };
+                var zipPath = Path.Combine(tmp.Path, "evidence.zip");
+
+                var bundle = EvidenceBundleWriter.Write(
+                    context, zipPath, maxWholeFileBytes: 4096, tailCaptureBytes: 2048);
+
+                Assert.Empty(bundle.Omitted);
+                Assert.Single(bundle.PartiallyCaptured);
+                Assert.Contains("only the last", bundle.PartiallyCaptured[0]);
+
+                using (var zip = ZipFile.OpenRead(zipPath))
+                {
+                    // The name itself must disclose the truncation.
+                    var captured = zip.Entries.Single(e => e.FullName.StartsWith("logs/", StringComparison.Ordinal));
+                    Assert.Contains(".last-", captured.FullName);
+
+                    using (var reader = new StreamReader(captured.Open()))
+                    {
+                        var text = reader.ReadToEnd();
+
+                        // The end of the log — where the failure is — must be present…
+                        Assert.Contains("the failure at the very end", text);
+                        // …the beginning must not, since it was cut…
+                        Assert.DoesNotContain("progress line 1\r\n", text);
+                        // …and the cut must land on a line boundary, not mid-line.
+                        Assert.StartsWith("2026-09-18", text);
+                    }
+
+                    using (var reader = new StreamReader(zip.GetEntry("README.txt").Open()))
+                    {
+                        var readme = reader.ReadToEnd();
+                        Assert.Contains("PARTIALLY captured", readme);
+                        Assert.Contains("setupact.log", readme);
+                    }
+                }
+            }
+        }
+
+        [Fact]
+        public void A_bundle_with_nothing_missing_says_so_explicitly()
+        {
+            using (var tmp = new TempDirectory())
+            {
+                var log = tmp.File("setupact.log", "one line\n");
+                var source = new LogSource("s", LogSourceCategory.SetupCurrent, "setupact.log", "", log);
+                var context = new DiagnosticContext
+                {
+                    Manifest = new LogManifestBuilder().Build(new[] { source }),
+                    SystemState = new SystemState { MachineName = "WS-TEST-0042" }
+                };
+                var zipPath = Path.Combine(tmp.Path, "evidence.zip");
+
+                var bundle = EvidenceBundleWriter.Write(context, zipPath);
+
+                Assert.Empty(bundle.Omitted);
+                Assert.Empty(bundle.PartiallyCaptured);
+                using (var zip = ZipFile.OpenRead(zipPath))
+                using (var reader = new StreamReader(zip.GetEntry("README.txt").Open()))
+                {
+                    Assert.Contains("captured in full", reader.ReadToEnd());
+                }
             }
         }
 

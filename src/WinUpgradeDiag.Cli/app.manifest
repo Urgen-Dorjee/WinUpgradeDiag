@@ -5,9 +5,20 @@
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
     <security>
       <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
-        <!-- Run via ConfigMgr Run Script, which already executes as SYSTEM; still require
-             elevation so the console head behaves the same way when run interactively. -->
-        <requestedExecutionLevel level="requireAdministrator" uiAccess="false" />
+        <!--
+          asInvoker, deliberately, unlike the WPF head.
+
+          ConfigMgr Run Script already executes as SYSTEM, so requireAdministrator buys nothing
+          there. What it does cost is severe: the OS refuses to start the process at all for a
+          non-elevated caller (Win32 error 740), so the help text cannot print, and the tool's own
+          "degrade, never crash" reporting (IsElevated, PrivilegedReadError) never gets to run.
+          If the shell did elevate us, stdout would detach into a new console and the quiet
+          switch's single-line output, which is exactly what Run Script captures, would be lost.
+
+          Instead we start at whatever level the caller has and say plainly what could not be
+          read without elevation. See Program.cs ExitCode.NotElevated.
+        -->
+        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
       </requestedPrivileges>
     </security>
   </trustInfo>

@@ -1,20 +1,26 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Text;
 using WinUpgradeDiag.Core.Native;
 
 namespace WinUpgradeDiag.Core.IO
 {
     /// <summary>
     /// Reads the last portion of a log file without loading the whole thing into memory.
-    /// AGENTS.md constraint #5: setupact.log is routinely 100-200 MB; this seeks to
+    /// AGENTS.md constraint #5: setupact.log is routinely 100-700 MB; this seeks to
     /// <c>length - windowBytes</c> and reads forward from there, widening only on request.
+    /// To search the parts the window does not cover, use <see cref="LogSearcher"/>.
     /// </summary>
     public sealed class TailReader
     {
         public const int DefaultWindowBytes = 2 * 1024 * 1024; // 2 MB
         public const int DefaultMaxLines = 5000;
+
+        /// <summary>
+        /// Upper bound on a single window. The window is buffered in memory in one array, so an
+        /// unbounded value would defeat the whole point of streaming a 700 MB log.
+        /// </summary>
+        public const int MaxWindowBytes = 64 * 1024 * 1024; // 64 MB
 
         /// <summary>
         /// Opens <paramref name="path"/> for reading, transparently retrying with
@@ -46,28 +52,29 @@ namespace WinUpgradeDiag.Core.IO
             {
                 throw new ArgumentException("TailReader requires a seekable stream.", nameof(stream));
             }
-
-            var fileSize = stream.Length;
-            var encoding = DetectEncoding(stream);
-            var bomLength = GetPreambleLength(encoding, stream);
-
-            long windowStart = Math.Max(bomLength, fileSize - windowBytes);
-            bool truncatedFromStart = windowStart > bomLength;
-
-            // Unicode encodings use fixed-width code units; seeking to an odd byte offset would
-            // split a character down the middle, so align the window start to a code-unit
-            // boundary relative to where content begins.
-            var unitSize = GetCodeUnitSize(encoding);
-            if (unitSize > 1)
+            if (windowBytes <= 0)
             {
-                var offsetFromContentStart = windowStart - bomLength;
-                var remainder = offsetFromContentStart % unitSize;
-                windowStart -= remainder;
+                throw new ArgumentOutOfRangeException(nameof(windowBytes), "The tail window must be at least one byte.");
             }
+            if (maxLines <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(maxLines), "The line cap must be at least one.");
+            }
+
+            var effectiveWindow = Math.Min(windowBytes, MaxWindowBytes);
+            var fileSize = stream.Length;
+            var log = LogEncoding.Detect(stream);
+
+            long windowStart = Math.Max(log.PreambleLength, fileSize - effectiveWindow);
+            bool truncatedFromStart = windowStart > log.PreambleLength;
+            windowStart = log.AlignToCodeUnit(windowStart);
 
             stream.Seek(windowStart, SeekOrigin.Begin);
 
-            var windowLength = (int)Math.Min(int.MaxValue, fileSize - windowStart);
+            // Read to the end of the file, not just `effectiveWindow` bytes: aligning the start
+            // down to a code-unit boundary can push the window a byte or two past the requested
+            // size, and clamping here would slice the final UTF-16 character in half.
+            var windowLength = (int)(fileSize - windowStart);
             var buffer = new byte[windowLength];
             int totalRead = 0;
             while (totalRead < windowLength)
@@ -80,7 +87,7 @@ namespace WinUpgradeDiag.Core.IO
                 totalRead += read;
             }
 
-            var text = encoding.GetString(buffer, 0, totalRead);
+            var text = log.Encoding.GetString(buffer, 0, totalRead);
             var rawLines = text.Split('\n');
 
             // If we started mid-file, the first "line" is very likely a partial line; drop it
@@ -90,12 +97,7 @@ namespace WinUpgradeDiag.Core.IO
             var lines = new List<string>();
             for (int i = startIndex; i < rawLines.Length; i++)
             {
-                var line = rawLines[i];
-                if (line.Length > 0 && line[line.Length - 1] == '\r')
-                {
-                    line = line.Substring(0, line.Length - 1);
-                }
-                lines.Add(line);
+                lines.Add(TrimCarriageReturn(rawLines[i]));
             }
 
             // Drop a trailing empty line caused by a final newline in the file.
@@ -111,63 +113,14 @@ namespace WinUpgradeDiag.Core.IO
                 lineCountTruncated = true;
             }
 
-            return new TailReadResult(lines, truncatedFromStart, lineCountTruncated, fileSize, windowStart, encoding);
+            return new TailReadResult(lines, truncatedFromStart, lineCountTruncated, fileSize, windowStart, log.Encoding);
         }
 
-        private static Encoding DetectEncoding(Stream stream)
+        internal static string TrimCarriageReturn(string line)
         {
-            var originalPosition = stream.Position;
-            stream.Seek(0, SeekOrigin.Begin);
-
-            var bom = new byte[4];
-            int read = stream.Read(bom, 0, 4);
-            stream.Seek(originalPosition, SeekOrigin.Begin);
-
-            if (read >= 3 && bom[0] == 0xEF && bom[1] == 0xBB && bom[2] == 0xBF)
-            {
-                return new UTF8Encoding(false);
-            }
-            if (read >= 2 && bom[0] == 0xFF && bom[1] == 0xFE)
-            {
-                return Encoding.Unicode; // UTF-16 LE
-            }
-            if (read >= 2 && bom[0] == 0xFE && bom[1] == 0xFF)
-            {
-                return Encoding.BigEndianUnicode;
-            }
-
-            // ConfigMgr and Panther logs are almost always plain ASCII/UTF-8 without a BOM.
-            return new UTF8Encoding(false);
-        }
-
-        private static int GetPreambleLength(Encoding encoding, Stream stream)
-        {
-            var originalPosition = stream.Position;
-            stream.Seek(0, SeekOrigin.Begin);
-            var head = new byte[4];
-            var read = stream.Read(head, 0, 4);
-            stream.Seek(originalPosition, SeekOrigin.Begin);
-
-            if (read >= 3 && head[0] == 0xEF && head[1] == 0xBB && head[2] == 0xBF)
-            {
-                return 3;
-            }
-            if (read >= 2 && ((head[0] == 0xFF && head[1] == 0xFE) || (head[0] == 0xFE && head[1] == 0xFF)))
-            {
-                return 2;
-            }
-
-            return 0;
-        }
-
-        private static int GetCodeUnitSize(Encoding encoding)
-        {
-            if (Equals(encoding, Encoding.Unicode) || Equals(encoding, Encoding.BigEndianUnicode))
-            {
-                return 2;
-            }
-
-            return 1;
+            return line.Length > 0 && line[line.Length - 1] == '\r'
+                ? line.Substring(0, line.Length - 1)
+                : line;
         }
     }
 }

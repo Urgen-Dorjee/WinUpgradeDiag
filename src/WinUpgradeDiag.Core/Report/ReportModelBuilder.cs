@@ -45,7 +45,7 @@ namespace WinUpgradeDiag.Core.Report
                     ["highValue"] = e.Source.HighValue,
                     ["path"] = r(e.ResolvedPath),
                     ["exists"] = e.Exists,
-                    ["sizeBytes"] = e.SizeBytes,
+                    ["sizeBytes"] = e.SizeKnown ? (object)e.SizeBytes : null,
                     ["lastWriteUtc"] = Iso(e.LastWriteTimeUtc),
                     ["readable"] = e.Readable,
                     ["requiresPrivilegedRead"] = e.RequiresPrivilegedRead,
@@ -119,7 +119,8 @@ namespace WinUpgradeDiag.Core.Report
                     ["displayName"] = f.DisplayName,
                     ["imagePath"] = r(f.ImagePath),
                     ["altitudeGroup"] = f.AltitudeGroup,
-                    ["startMode"] = f.StartMode
+                    ["startMode"] = f.StartMode,
+                    ["startModeName"] = f.StartModeName
                 }).ToList(),
                 ["events"] = (s.Events ?? new List<EventRecordInfo>()).Select(e => (object)new Dictionary<string, object>
                 {

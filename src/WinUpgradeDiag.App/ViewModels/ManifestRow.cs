@@ -19,7 +19,7 @@ namespace WinUpgradeDiag.App.ViewModels
         public string Path => Entry.ResolvedPath;
         public bool HighValue => Entry.Source.HighValue;
         public string Exists => Entry.Exists ? "Yes" : "No";
-        public string Size => Entry.Exists ? HtmlReportWriter.Size(Entry.SizeBytes) : "";
+        public string Size => Entry.SizeKnown ? HtmlReportWriter.Size(Entry.SizeBytes) : "";
 
         public string LastWrite => Entry.LastWriteTimeUtc.HasValue && Entry.Exists
             ? Entry.LastWriteTimeUtc.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture)
@@ -29,9 +29,11 @@ namespace WinUpgradeDiag.App.ViewModels
         {
             get
             {
-                if (!Entry.Exists) return "Not present";
+                // Order matters: a log confirmed present but unreadable must never read as
+                // "Not present". Reporting unreadable evidence as absent is the DESIGN.md §8 trap.
                 if (Entry.Readable) return "Readable";
-                if (Entry.RequiresPrivilegedRead) return "Protected (backup read)";
+                if (Entry.RequiresPrivilegedRead) return "Protected (needs elevation)";
+                if (!Entry.Exists) return "Not present";
                 return "Unreadable: " + Entry.AccessError;
             }
         }

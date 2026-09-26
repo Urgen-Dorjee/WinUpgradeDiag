@@ -37,8 +37,8 @@ namespace WinUpgradeDiag.Core.Collect
                             {
                                 DeviceId = deviceId,
                                 FriendlyName = SafeGet(disk, "FriendlyName"),
-                                HealthStatus = SafeGetEnumName(disk, "HealthStatus"),
-                                OperationalStatus = SafeGet(disk, "OperationalStatus")
+                                HealthStatus = SafeDescribe(disk, "HealthStatus", StorageEnums.HealthStatus),
+                                OperationalStatus = SafeDescribe(disk, "OperationalStatus", StorageEnums.OperationalStatus)
                             };
 
                             StorageHealthInfo reliability;
@@ -114,11 +114,21 @@ namespace WinUpgradeDiag.Core.Collect
             }
         }
 
-        private static string SafeGetEnumName(ManagementObject o, string property)
+        /// <summary>
+        /// Reads a property and runs it through <paramref name="describe"/> to turn the provider's
+        /// numeric enumeration into readable text. HealthStatus arrives as a UInt16 and
+        /// OperationalStatus as a UInt16[], so neither is fit to show as-is.
+        /// </summary>
+        private static string SafeDescribe(ManagementObject o, string property, Func<object, string> describe)
         {
-            // HealthStatus etc. come back as numeric enums; keep the raw value since mapping the
-            // full enum table is not needed for phase 1 (no verdicts yet).
-            return SafeGet(o, property);
+            try
+            {
+                return describe(o[property]);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
         }
 
         private static ulong? SafeGetULong(ManagementObject o, string property)

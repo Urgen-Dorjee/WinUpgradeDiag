@@ -24,7 +24,12 @@ namespace WinUpgradeDiag.Core.Report
         public string HtmlPath { get; set; }
         public string JsonPath { get; set; }
         public string EvidenceZipPath { get; set; }
+
+        /// <summary>Logs left out of the evidence zip entirely, each with the reason.</summary>
         public IReadOnlyList<string> SkippedEvidence { get; set; } = new List<string>();
+
+        /// <summary>Logs too large to include whole, of which only the tail was captured.</summary>
+        public IReadOnlyList<string> PartiallyCapturedEvidence { get; set; } = new List<string>();
     }
 
     /// <summary>
@@ -65,7 +70,9 @@ namespace WinUpgradeDiag.Core.Report
                 {
                     result.EvidenceZipPath = Path.Combine(dir, "evidence_" + DateTime.Now.ToString("HHmmss", CultureInfo.InvariantCulture) + ".zip");
                 }
-                result.SkippedEvidence = EvidenceBundleWriter.Write(context, result.EvidenceZipPath);
+                var bundle = EvidenceBundleWriter.Write(context, result.EvidenceZipPath);
+                result.SkippedEvidence = bundle.Omitted;
+                result.PartiallyCapturedEvidence = bundle.PartiallyCaptured;
             }
 
             return result;
