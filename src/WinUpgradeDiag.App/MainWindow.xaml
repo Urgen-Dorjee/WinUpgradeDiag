@@ -2,76 +2,292 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="WinUpgradeDiag — Windows upgrade diagnostic"
-        Width="1180" Height="780" MinWidth="820" MinHeight="560"
+        Width="1240" Height="840" MinWidth="900" MinHeight="620"
         WindowStartupLocation="CenterScreen"
-        FontFamily="Segoe UI" FontSize="13">
+        Background="{StaticResource SurfaceMuted}"
+        FontFamily="Segoe UI" FontSize="13"
+        TextOptions.TextFormattingMode="Display">
 
     <DockPanel>
-        <!-- Header -->
-        <Border DockPanel.Dock="Top" Background="#1F3A5F" Padding="16,10">
+        <!-- ==================== Header ==================== -->
+        <Border DockPanel.Dock="Top" Background="{StaticResource Brand900}" Padding="24,14">
             <DockPanel>
-                <TextBlock DockPanel.Dock="Right" Foreground="#C9D6E8" VerticalAlignment="Center"
-                           Text="{Binding ToolVersion, Mode=OneWay}" />
+                <TextBlock DockPanel.Dock="Right" Foreground="#FF9FB4CC" VerticalAlignment="Center"
+                           FontSize="11" Text="{Binding ToolVersion, Mode=OneWay}"
+                           ToolTip="{Binding ToolVersionFull, Mode=OneWay}" />
                 <StackPanel>
-                    <TextBlock Text="WinUpgradeDiag" Foreground="White" FontSize="20" FontWeight="SemiBold" />
+                    <TextBlock Text="WinUpgradeDiag" Foreground="White" FontSize="19" FontWeight="SemiBold" />
                     <TextBlock Text="Offline, read-only diagnostic for failed Windows 10 → 11 in-place upgrades"
-                               Foreground="#C9D6E8" />
+                               Foreground="#FF9FB4CC" FontSize="12" Margin="0,2,0,0" />
                 </StackPanel>
             </DockPanel>
         </Border>
 
-        <Grid Margin="16">
-            <!-- Idle state -->
+        <Grid>
+            <!-- ==================== Idle ==================== -->
             <StackPanel Visibility="{Binding IsIdle, Converter={StaticResource BoolToVisibility}}"
-                        VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="560">
-                <TextBlock TextWrapping="Wrap" FontSize="15" Margin="0,0,0,12"
-                           Text="Reads the upgrade, task sequence and servicing logs already on this machine, plus live process, WMI, storage and driver state. Nothing is changed and nothing leaves the machine." />
+                        VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="520">
+                <TextBlock Style="{StaticResource DisplayText}" Text="Diagnose this machine"
+                           HorizontalAlignment="Center" />
+                <TextBlock Style="{StaticResource BodyText}" Margin="0,10,0,22" TextAlignment="Center"
+                           Text="Reads the upgrade, task sequence and servicing logs already on this machine, plus live process, WMI, storage and driver state, then names the most likely cause. Nothing is changed and nothing leaves the machine." />
                 <Button Content="Run diagnostic" Command="{Binding RunCommand}"
-                        Padding="24,10" FontSize="15" HorizontalAlignment="Left" />
+                        Style="{StaticResource PrimaryButton}" Padding="28,11" FontSize="14"
+                        HorizontalAlignment="Center" />
             </StackPanel>
 
-            <!-- Running state -->
+            <!-- ==================== Running ==================== -->
             <StackPanel Visibility="{Binding IsRunning, Converter={StaticResource BoolToVisibility}}"
-                        VerticalAlignment="Center" HorizontalAlignment="Center" Width="520">
-                <TextBlock Text="Collecting…" FontSize="16" FontWeight="SemiBold" />
-                <ProgressBar IsIndeterminate="True" Height="10" Margin="0,10" />
+                        VerticalAlignment="Center" HorizontalAlignment="Center" Width="460">
+                <TextBlock Style="{StaticResource DisplayText}" Text="Collecting evidence…" HorizontalAlignment="Center" />
+                <ProgressBar IsIndeterminate="True" Height="4" Margin="0,18,0,12"
+                             Background="{StaticResource Line200}" Foreground="{StaticResource Brand500}"
+                             BorderThickness="0" />
                 <!-- DESIGN.md §5: never a spinner without a current-step label. -->
-                <TextBlock Text="{Binding CurrentStep, Mode=OneWay}" TextWrapping="Wrap" Foreground="#444" />
-                <Button Content="Cancel" Command="{Binding CancelCommand}" HorizontalAlignment="Left"
-                        Padding="16,6" Margin="0,14,0,0" />
+                <TextBlock Style="{StaticResource CaptionText}" TextAlignment="Center"
+                           Text="{Binding CurrentStep, Mode=OneWay}" />
+                <Button Content="Cancel" Command="{Binding CancelCommand}" Style="{StaticResource SecondaryButton}"
+                        HorizontalAlignment="Center" Margin="0,20,0,0" />
             </StackPanel>
 
-            <!-- Results state -->
-            <DockPanel Visibility="{Binding HasResults, Converter={StaticResource BoolToVisibility}}">
-
-                <!-- Verdict card (phase 1: plain summary, no verdict) -->
-                <Border DockPanel.Dock="Top" Background="#EEF4FB" BorderBrush="#B9D3EE" BorderThickness="1"
-                        CornerRadius="4" Padding="12" Margin="0,0,0,10">
-                    <DockPanel>
-                        <Button DockPanel.Dock="Right" Content="Run again" Command="{Binding RunCommand}"
-                                Padding="14,6" VerticalAlignment="Top" Margin="12,0,0,0" />
-                        <StackPanel>
-                            <TextBlock Text="Summary" FontWeight="SemiBold" FontSize="15" />
-                            <TextBlock Text="{Binding Summary, Mode=OneWay}" TextWrapping="Wrap" Margin="0,4,0,0" />
-                        </StackPanel>
-                    </DockPanel>
-                </Border>
-
+            <!-- ==================== Results ==================== -->
+            <DockPanel Visibility="{Binding HasResults, Converter={StaticResource BoolToVisibility}}"
+                       Margin="24,18,24,20">
                 <TabControl>
-                    <TabItem Header="Timeline" IsEnabled="False" ToolTip="Arrives with the parsers and rules engine (phase 2)." />
-                    <TabItem Header="Findings" IsEnabled="False" ToolTip="Arrives with the parsers and rules engine (phase 2)." />
 
-                    <!-- Logs tab -->
-                    <TabItem Header="Logs" IsSelected="True">
-                        <Grid Margin="8">
+                    <!-- ============ Summary ============ -->
+                    <TabItem Header="Summary" IsSelected="True">
+                        <ScrollViewer Style="{StaticResource ScrollHost}" Margin="0,18,0,0">
+                            <StackPanel>
+
+                                <!-- Verdict card -->
+                                <Border Style="{StaticResource Card}"
+                                        Background="{Binding VerdictSeverity, Converter={StaticResource SeverityToBackground}}"
+                                        BorderBrush="{Binding VerdictSeverity, Converter={StaticResource SeverityToBorder}}">
+                                    <StackPanel>
+                                        <Border Style="{StaticResource Chip}" HorizontalAlignment="Left" Margin="0,0,0,10"
+                                                Background="{Binding VerdictSeverity, Converter={StaticResource SeverityToForeground}}"
+                                                BorderBrush="Transparent">
+                                            <TextBlock Style="{StaticResource ChipText}" Foreground="White"
+                                                       Text="{Binding VerdictKindText, Mode=OneWay}" />
+                                        </Border>
+
+                                        <TextBlock Style="{StaticResource DisplayText}" FontSize="19"
+                                                   Foreground="{Binding VerdictSeverity, Converter={StaticResource SeverityToForeground}}"
+                                                   Text="{Binding VerdictHeadline, Mode=OneWay}" />
+
+                                        <TextBlock Style="{StaticResource BodyText}" Margin="0,10,0,0"
+                                                   Text="{Binding VerdictDetail, Mode=OneWay}" />
+
+                                        <!-- Recommended action -->
+                                        <Border Margin="0,16,0,0" Padding="14" CornerRadius="4"
+                                                Background="{StaticResource Surface}"
+                                                BorderBrush="{StaticResource Line200}" BorderThickness="1"
+                                                Visibility="{Binding HasRecommendedAction, Converter={StaticResource BoolToVisibility}}">
+                                            <StackPanel>
+                                                <TextBlock Style="{StaticResource ChipText}" Foreground="{StaticResource Ink500}"
+                                                           Text="RECOMMENDED ACTION" />
+                                                <TextBlock Style="{StaticResource BodyText}" Margin="0,6,0,0"
+                                                           Foreground="{StaticResource Ink900}"
+                                                           Text="{Binding RecommendedAction, Mode=OneWay}" />
+
+                                                <Border Margin="0,12,0,0" Padding="10,8" CornerRadius="4"
+                                                        Background="{StaticResource Ink900}"
+                                                        Visibility="{Binding HasRecommendedCommand, Converter={StaticResource BoolToVisibility}}">
+                                                    <DockPanel>
+                                                        <Button DockPanel.Dock="Right" Content="Copy"
+                                                                Command="{Binding CopyCommandCommand}"
+                                                                Style="{StaticResource ButtonBase}"
+                                                                Background="#FF2B3440" Foreground="White"
+                                                                BorderThickness="0" Padding="12,4" Margin="10,0,0,0"
+                                                                VerticalAlignment="Top" />
+                                                        <TextBlock Style="{StaticResource MonoText}" Foreground="#FFE6EDF3"
+                                                                   TextWrapping="Wrap"
+                                                                   Text="{Binding RecommendedCommand, Mode=OneWay}" />
+                                                    </DockPanel>
+                                                </Border>
+
+                                                <TextBlock Style="{StaticResource CaptionText}" Margin="0,8,0,0"
+                                                           Text="This tool never runs commands for you. Review before executing."
+                                                           Visibility="{Binding HasRecommendedCommand, Converter={StaticResource BoolToVisibility}}" />
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Gaps -->
+                                <Border Style="{StaticResource Card}" Margin="0,14,0,0"
+                                        Background="{StaticResource WarningBg}" BorderBrush="{StaticResource WarningLine}"
+                                        Visibility="{Binding HasGaps, Converter={StaticResource BoolToVisibility}}">
+                                    <StackPanel>
+                                        <TextBlock Style="{StaticResource ChipText}" Foreground="{StaticResource WarningFg}"
+                                                   Text="WHAT COULD NOT BE CHECKED" />
+                                        <TextBlock Style="{StaticResource CaptionText}" Margin="0,6,0,8"
+                                                   Foreground="{StaticResource WarningFg}"
+                                                   Text="A clean result from a partial collection is not the same as a clean machine." />
+                                        <ItemsControl ItemsSource="{Binding Gaps}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Style="{StaticResource BodyText}" Margin="0,3"
+                                                               Foreground="{StaticResource Ink700}"
+                                                               Text="{Binding Mode=OneWay}" />
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Findings -->
+                                <TextBlock Style="{StaticResource HeadingText}" Text="Findings"
+                                           Visibility="{Binding HasFindings, Converter={StaticResource BoolToVisibility}}" />
+                                <TextBlock Style="{StaticResource CaptionText}" Margin="0,0,0,10"
+                                           Text="Ranked by how likely each is to be the cause. Every finding quotes the evidence that produced it."
+                                           Visibility="{Binding HasFindings, Converter={StaticResource BoolToVisibility}}" />
+
+                                <!-- How to read the badges. Answers "which of these is the real cause?" -->
+                                <Border Padding="12" CornerRadius="4" Margin="0,0,0,12"
+                                        Background="{StaticResource Line100}" BorderBrush="{StaticResource Line200}"
+                                        BorderThickness="1"
+                                        Visibility="{Binding HasFindings, Converter={StaticResource BoolToVisibility}}">
+                                    <StackPanel>
+                                        <TextBlock Style="{StaticResource ChipText}" Foreground="{StaticResource Ink500}"
+                                                   Text="HOW TO READ THIS" />
+                                        <Grid Margin="0,8,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                                                <TextBlock Style="{StaticResource CaptionText}" Foreground="{StaticResource Ink700}"
+                                                           Text="Severity — how much it matters" FontWeight="SemiBold" />
+                                                <TextBlock Style="{StaticResource CaptionText}" Margin="0,4,0,0"
+                                                           Text="Critical: this is, or very likely is, the cause." />
+                                                <TextBlock Style="{StaticResource CaptionText}"
+                                                           Text="Warning: contributes, or will bite on the next attempt." />
+                                                <TextBlock Style="{StaticResource CaptionText}"
+                                                           Text="Info: true and worth knowing, but not a fault." />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Style="{StaticResource CaptionText}" Foreground="{StaticResource Ink700}"
+                                                           Text="Confidence — how far the evidence goes" FontWeight="SemiBold" />
+                                                <TextBlock Style="{StaticResource CaptionText}" Margin="0,4,0,0"
+                                                           Text="High: the evidence names the cause outright." />
+                                                <TextBlock Style="{StaticResource CaptionText}"
+                                                           Text="Medium: a strong inference, not a statement." />
+                                                <TextBlock Style="{StaticResource CaptionText}"
+                                                           Text="Low: suggestive only — a human must judge it." />
+                                            </StackPanel>
+                                        </Grid>
+                                        <TextBlock Style="{StaticResource CaptionText}" Margin="0,10,0,0"
+                                                   Foreground="{StaticResource Ink700}"
+                                                   Text="The verdict above is the top Critical finding with at least Medium confidence. Failing hardware always outranks software, because everything downstream of a failing disk is a symptom. A live upgrade outranks everything, because advising cleanup on a running task sequence would break a healthy machine." />
+                                    </StackPanel>
+                                </Border>
+
+                                <ItemsControl ItemsSource="{Binding Findings}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Style="{StaticResource Card}" Margin="0,0,0,10" Padding="16">
+                                                <StackPanel>
+                                                    <DockPanel>
+                                                        <Border DockPanel.Dock="Left" Style="{StaticResource Chip}"
+                                                                Margin="0,0,10,0"
+                                                                Background="{Binding Severity, Converter={StaticResource SeverityToBackground}}"
+                                                                BorderBrush="{Binding Severity, Converter={StaticResource SeverityToBorder}}">
+                                                            <TextBlock Style="{StaticResource ChipText}"
+                                                                       Foreground="{Binding Severity, Converter={StaticResource SeverityToForeground}}"
+                                                                       Text="{Binding Severity}" />
+                                                        </Border>
+                                                        <TextBlock DockPanel.Dock="Right" Style="{StaticResource CaptionText}"
+                                                                   VerticalAlignment="Center" Margin="10,0,0,0"
+                                                                   Text="{Binding Confidence}" />
+                                                        <TextBlock Style="{StaticResource BodyText}" FontWeight="SemiBold"
+                                                                   Foreground="{StaticResource Ink900}" FontSize="14"
+                                                                   VerticalAlignment="Center"
+                                                                   Text="{Binding Title}" />
+                                                    </DockPanel>
+
+                                                    <TextBlock Style="{StaticResource BodyText}" Margin="0,10,0,0"
+                                                               Text="{Binding Meaning}" />
+
+                                                    <TextBlock Style="{StaticResource BodyText}" Margin="0,10,0,0"
+                                                               Foreground="{StaticResource Ink900}">
+                                                        <Run Text="What to do: " FontWeight="SemiBold" />
+                                                        <Run Text="{Binding Action, Mode=OneWay}" />
+                                                    </TextBlock>
+
+                                                    <ToggleButton Margin="0,10,0,0" HorizontalAlignment="Left" Cursor="Hand"
+                                                                  IsChecked="{Binding IsExpanded, Mode=TwoWay}"
+                                                                  Visibility="{Binding HasEvidence, Converter={StaticResource BoolToVisibility}}">
+                                                        <ToggleButton.Template>
+                                                            <ControlTemplate TargetType="ToggleButton">
+                                                                <TextBlock Foreground="{StaticResource Brand500}" FontSize="12"
+                                                                           Text="{Binding ExpanderGlyph}" />
+                                                            </ControlTemplate>
+                                                        </ToggleButton.Template>
+                                                    </ToggleButton>
+
+                                                    <Border Margin="0,10,0,0" Padding="12" CornerRadius="4"
+                                                            Background="{StaticResource SurfaceMuted}"
+                                                            BorderBrush="{StaticResource Line200}" BorderThickness="1"
+                                                            Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVisibility}}">
+                                                        <StackPanel>
+                                                            <TextBlock Style="{StaticResource ChipText}"
+                                                                       Foreground="{StaticResource Ink500}" Text="EVIDENCE" />
+                                                            <ItemsControl ItemsSource="{Binding EvidenceLines}" Margin="0,8,0,0">
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <DataTemplate>
+                                                                        <StackPanel Margin="0,0,0,10">
+                                                                            <TextBlock Style="{StaticResource CaptionText}"
+                                                                                       Text="{Binding Origin}"
+                                                                                       ToolTip="{Binding FullSource}" />
+                                                                            <Border Background="{StaticResource Surface}"
+                                                                                    BorderBrush="{StaticResource Line200}"
+                                                                                    BorderThickness="1" CornerRadius="3"
+                                                                                    Padding="8,6" Margin="0,3,0,0">
+                                                                                <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                                                                              VerticalScrollBarVisibility="Disabled">
+                                                                                    <TextBlock Style="{StaticResource MonoText}"
+                                                                                               Text="{Binding Text}" />
+                                                                                </ScrollViewer>
+                                                                            </Border>
+                                                                        </StackPanel>
+                                                                    </DataTemplate>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+                                                        </StackPanel>
+                                                    </Border>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <Border Style="{StaticResource Card}" Margin="0,4,0,0"
+                                        Background="{StaticResource GoodBg}" BorderBrush="{StaticResource GoodLine}"
+                                        Visibility="{Binding HasFindings, Converter={StaticResource InverseBoolToVisibility}}">
+                                    <TextBlock Style="{StaticResource BodyText}" Foreground="{StaticResource GoodFg}"
+                                               Text="No findings. Nothing in the collected state or the logs that were read matched a known failure pattern." />
+                                </Border>
+
+                                <Button Content="Run again" Command="{Binding RunCommand}"
+                                        Style="{StaticResource SecondaryButton}"
+                                        HorizontalAlignment="Left" Margin="0,16,0,8" />
+                            </StackPanel>
+                        </ScrollViewer>
+                    </TabItem>
+
+                    <!-- ============ Logs ============ -->
+                    <TabItem Header="Logs">
+                        <Grid Margin="0,16,0,0">
                             <Grid.RowDefinitions>
-                                <RowDefinition Height="2*" />
+                                <RowDefinition Height="2*" MinHeight="150" />
                                 <RowDefinition Height="Auto" />
-                                <RowDefinition Height="3*" />
+                                <RowDefinition Height="3*" MinHeight="150" />
                             </Grid.RowDefinitions>
 
                             <DataGrid Grid.Row="0" ItemsSource="{Binding ManifestRows}"
-                                      SelectedItem="{Binding SelectedManifestRow, Mode=TwoWay}" Margin="0">
+                                      SelectedItem="{Binding SelectedManifestRow, Mode=TwoWay}">
                                 <DataGrid.RowStyle>
                                     <Style TargetType="DataGridRow">
                                         <Style.Triggers>
@@ -79,109 +295,132 @@
                                                 <Setter Property="FontWeight" Value="SemiBold" />
                                             </DataTrigger>
                                             <DataTrigger Binding="{Binding Exists}" Value="No">
-                                                <Setter Property="Foreground" Value="#999" />
+                                                <Setter Property="Foreground" Value="{StaticResource Ink300}" />
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
                                 </DataGrid.RowStyle>
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="Category" Binding="{Binding Category, Mode=OneWay}" Width="120" />
-                                    <DataGridTextColumn Header="Log" Binding="{Binding Name, Mode=OneWay}" Width="220" />
+                                    <DataGridTextColumn Header="Category" Binding="{Binding Category, Mode=OneWay}" Width="115" />
+                                    <DataGridTextColumn Header="Log" Binding="{Binding Name, Mode=OneWay}" Width="205" />
                                     <DataGridTextColumn Header="Path" Binding="{Binding Path, Mode=OneWay}" Width="*" />
-                                    <DataGridTextColumn Header="Exists" Binding="{Binding Exists, Mode=OneWay}" Width="55" />
-                                    <DataGridTextColumn Header="Size" Binding="{Binding Size, Mode=OneWay}" Width="75" />
-                                    <DataGridTextColumn Header="Last write" Binding="{Binding LastWrite, Mode=OneWay}" Width="140" />
-                                    <DataGridTextColumn Header="Status" Binding="{Binding Status, Mode=OneWay}" Width="170" />
+                                    <DataGridTextColumn Header="Size" Binding="{Binding Size, Mode=OneWay}" Width="80" />
+                                    <DataGridTextColumn Header="Last write" Binding="{Binding LastWrite, Mode=OneWay}" Width="135" />
+                                    <DataGridTextColumn Header="Status" Binding="{Binding Status, Mode=OneWay}" Width="175" />
                                 </DataGrid.Columns>
                             </DataGrid>
 
-                            <StackPanel Grid.Row="1" Margin="0,8,0,4">
+                            <StackPanel Grid.Row="1" Margin="0,14,0,10">
                                 <DockPanel>
-                                    <TextBlock Text="Find:" VerticalAlignment="Center" Margin="0,0,6,0" />
                                     <Button DockPanel.Dock="Right" Content="Cancel search"
-                                            Command="{Binding CancelSearchCommand}" Padding="10,3" Margin="6,0,0,0"
+                                            Command="{Binding CancelSearchCommand}" Style="{StaticResource SecondaryButton}"
+                                            Margin="8,0,0,0" Padding="12,6"
                                             Visibility="{Binding IsSearching, Converter={StaticResource BoolToVisibility}}" />
                                     <Button DockPanel.Dock="Right" Content="Search whole file"
-                                            Command="{Binding SearchWholeFileCommand}" Padding="10,3" Margin="6,0,0,0"
+                                            Command="{Binding SearchWholeFileCommand}" Style="{StaticResource PrimaryButton}"
+                                            Margin="8,0,0,0" Padding="14,6"
                                             ToolTip="Streams the entire log, however large, without loading it into memory." />
                                     <TextBox Text="{Binding ViewerFilter, UpdateSourceTrigger=PropertyChanged}" />
                                 </DockPanel>
 
-                                <!-- Determinate: on a 700 MB log the technician needs to see it advancing. -->
-                                <ProgressBar Height="4" Margin="0,6,0,0" Minimum="0" Maximum="1"
+                                <ProgressBar Height="3" Margin="0,8,0,0" Minimum="0" Maximum="1"
+                                             Background="{StaticResource Line200}" Foreground="{StaticResource Brand500}"
+                                             BorderThickness="0"
                                              Value="{Binding SearchProgress, Mode=OneWay}"
                                              Visibility="{Binding IsSearching, Converter={StaticResource BoolToVisibility}}" />
 
-                                <TextBlock Text="{Binding ViewerStatus, Mode=OneWay}" Foreground="#555"
-                                           Margin="0,6,0,0" TextWrapping="Wrap" />
+                                <TextBlock Style="{StaticResource CaptionText}" Margin="0,8,0,0"
+                                           Text="{Binding ViewerStatus, Mode=OneWay}" />
                             </StackPanel>
 
-                            <ListBox Grid.Row="2" ItemsSource="{Binding ViewerLines}"
-                                     FontFamily="{StaticResource MonoFont}" FontSize="12"
-                                     VirtualizingStackPanel.IsVirtualizing="True"
-                                     VirtualizingStackPanel.VirtualizationMode="Recycling"
-                                     ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                                     ScrollViewer.CanContentScroll="True"
-                                     HorizontalContentAlignment="Stretch">
-                                <ListBox.ItemContainerStyle>
-                                    <Style TargetType="ListBoxItem">
-                                        <Setter Property="Padding" Value="0" />
-                                        <Setter Property="MinHeight" Value="0" />
-                                    </Style>
-                                </ListBox.ItemContainerStyle>
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="72" />
-                                                <ColumnDefinition Width="*" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0" Text="{Binding LineNumber, Mode=OneWay, StringFormat={}{0:N0}}"
-                                                       Foreground="#9AA0A6" TextAlignment="Right" Margin="0,0,10,0" />
-                                            <TextBlock Grid.Column="1" Text="{Binding Text, Mode=OneWay}">
-                                                <TextBlock.Style>
-                                                    <Style TargetType="TextBlock">
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding IsMatch}" Value="True">
-                                                                <Setter Property="FontWeight" Value="Bold" />
-                                                                <Setter Property="Background" Value="#FFF3C4" />
-                                                            </DataTrigger>
-                                                            <DataTrigger Binding="{Binding IsGap}" Value="True">
-                                                                <Setter Property="Foreground" Value="#9AA0A6" />
-                                                                <Setter Property="FontStyle" Value="Italic" />
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </TextBlock.Style>
-                                            </TextBlock>
-                                        </Grid>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
+                            <Border Grid.Row="2" Background="{StaticResource Surface}"
+                                    BorderBrush="{StaticResource Line200}" BorderThickness="1" CornerRadius="4">
+                                <ListBox ItemsSource="{Binding ViewerLines}" BorderThickness="0"
+                                         Background="Transparent"
+                                         VirtualizingStackPanel.IsVirtualizing="True"
+                                         VirtualizingStackPanel.VirtualizationMode="Recycling"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                         ScrollViewer.CanContentScroll="True"
+                                         HorizontalContentAlignment="Stretch">
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem">
+                                            <Setter Property="Padding" Value="0" />
+                                            <Setter Property="MinHeight" Value="0" />
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="ListBoxItem">
+                                                        <ContentPresenter />
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="86" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <Border Grid.Column="0" Background="{StaticResource Line100}">
+                                                    <TextBlock Text="{Binding LineNumber, Mode=OneWay, StringFormat={}{0:N0}}"
+                                                               Foreground="{StaticResource Ink300}" TextAlignment="Right"
+                                                               FontFamily="{StaticResource MonoFont}" FontSize="11"
+                                                               Padding="0,1,10,1" />
+                                                </Border>
+                                                <TextBlock Grid.Column="1" Text="{Binding Text, Mode=OneWay}"
+                                                           FontFamily="{StaticResource MonoFont}" FontSize="12"
+                                                           Padding="10,1,0,1">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Foreground" Value="{StaticResource Ink900}" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsMatch}" Value="True">
+                                                                    <Setter Property="FontWeight" Value="Bold" />
+                                                                    <Setter Property="Background" Value="{StaticResource HighlightBg}" />
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding IsGap}" Value="True">
+                                                                    <Setter Property="Foreground" Value="{StaticResource Ink300}" />
+                                                                    <Setter Property="FontStyle" Value="Italic" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Border>
                         </Grid>
                     </TabItem>
 
-                    <!-- System tab -->
+                    <!-- ============ System ============ -->
                     <TabItem Header="System">
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8">
+                        <ScrollViewer Style="{StaticResource ScrollHost}" Margin="0,16,0,0">
                             <StackPanel>
-                                <ItemsControl ItemsSource="{Binding SystemFacts}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Grid Margin="0,1">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="300" />
-                                                    <ColumnDefinition Width="*" />
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Text="{Binding Key, Mode=OneWay}" Foreground="#555" TextWrapping="Wrap" />
-                                                <TextBlock Grid.Column="1" Text="{Binding Value, Mode=OneWay}" TextWrapping="Wrap" />
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
+                                <Border Style="{StaticResource Card}">
+                                    <ItemsControl ItemsSource="{Binding SystemFacts}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Margin="0,3">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="280" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Style="{StaticResource CaptionText}"
+                                                               Text="{Binding Key, Mode=OneWay}" />
+                                                    <TextBlock Grid.Column="1" Style="{StaticResource BodyText}"
+                                                               Foreground="{StaticResource Ink900}"
+                                                               Text="{Binding Value, Mode=OneWay}" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Border>
 
-                                <TextBlock Style="{StaticResource SectionHeader}" Text="Processes" />
-                                <DataGrid ItemsSource="{Binding Processes}" MaxHeight="200">
+                                <TextBlock Style="{StaticResource HeadingText}" Text="Processes" />
+                                <DataGrid ItemsSource="{Binding Processes}" MaxHeight="180">
                                     <DataGrid.Columns>
                                         <DataGridTextColumn Header="Process" Binding="{Binding Name, Mode=OneWay}" Width="180" />
                                         <DataGridTextColumn Header="Running" Binding="{Binding IsRunning, Mode=OneWay}" Width="80" />
@@ -190,46 +429,49 @@
                                     </DataGrid.Columns>
                                 </DataGrid>
 
-                                <TextBlock Style="{StaticResource SectionHeader}" Text="Storage health" />
-                                <DataGrid ItemsSource="{Binding StorageHealth}" MaxHeight="200">
+                                <TextBlock Style="{StaticResource HeadingText}" Text="Storage health" />
+                                <DataGrid ItemsSource="{Binding StorageHealth}" MaxHeight="180">
                                     <DataGrid.Columns>
                                         <DataGridTextColumn Header="Disk" Binding="{Binding FriendlyName, Mode=OneWay}" Width="*" />
-                                        <DataGridTextColumn Header="Health" Binding="{Binding HealthStatus, Mode=OneWay}" Width="80" />
-                                        <DataGridTextColumn Header="Wear" Binding="{Binding Wear, Mode=OneWay}" Width="70" />
-                                        <DataGridTextColumn Header="Read errors (uncorr.)" Binding="{Binding ReadErrorsUncorrected, Mode=OneWay}" Width="150" />
-                                        <DataGridTextColumn Header="Write errors (uncorr.)" Binding="{Binding WriteErrorsUncorrected, Mode=OneWay}" Width="150" />
-                                        <DataGridTextColumn Header="Power-on hours" Binding="{Binding PowerOnHours, Mode=OneWay}" Width="120" />
+                                        <DataGridTextColumn Header="Health" Binding="{Binding HealthStatus, Mode=OneWay}" Width="90" />
+                                        <DataGridTextColumn Header="Operational" Binding="{Binding OperationalStatus, Mode=OneWay}" Width="130" />
+                                        <DataGridTextColumn Header="Wear %" Binding="{Binding Wear, Mode=OneWay}" Width="70" />
+                                        <DataGridTextColumn Header="Read err." Binding="{Binding ReadErrorsUncorrected, Mode=OneWay}" Width="90" />
+                                        <DataGridTextColumn Header="Write err." Binding="{Binding WriteErrorsUncorrected, Mode=OneWay}" Width="90" />
+                                        <DataGridTextColumn Header="Power-on hrs" Binding="{Binding PowerOnHours, Mode=OneWay}" Width="110" />
                                     </DataGrid.Columns>
                                 </DataGrid>
 
-                                <TextBlock Style="{StaticResource SectionHeader}" Text="Filter drivers" />
-                                <DataGrid ItemsSource="{Binding FilterDrivers}" MaxHeight="260">
+                                <TextBlock Style="{StaticResource HeadingText}" Text="Filter drivers" />
+                                <DataGrid ItemsSource="{Binding FilterDrivers}" MaxHeight="220">
                                     <DataGrid.Columns>
-                                        <DataGridTextColumn Header="Service" Binding="{Binding ServiceName, Mode=OneWay}" Width="160" />
-                                        <DataGridTextColumn Header="Display name" Binding="{Binding DisplayName, Mode=OneWay}" Width="220" />
-                                        <DataGridTextColumn Header="Altitude group" Binding="{Binding AltitudeGroup, Mode=OneWay}" Width="200" />
-                                        <DataGridTextColumn Header="Start" Binding="{Binding StartModeName, Mode=OneWay}" Width="80" />
+                                        <DataGridTextColumn Header="Service" Binding="{Binding ServiceName, Mode=OneWay}" Width="150" />
+                                        <DataGridTextColumn Header="Display name" Binding="{Binding DisplayName, Mode=OneWay}" Width="210" />
+                                        <DataGridTextColumn Header="Altitude group" Binding="{Binding AltitudeGroup, Mode=OneWay}" Width="190" />
+                                        <DataGridTextColumn Header="Start" Binding="{Binding StartModeName, Mode=OneWay}" Width="90" />
                                         <DataGridTextColumn Header="Image" Binding="{Binding ImagePath, Mode=OneWay}" Width="*" />
                                     </DataGrid.Columns>
                                 </DataGrid>
 
-                                <TextBlock Style="{StaticResource SectionHeader}" Text="Event log (System and Application, newest first)" />
-                                <DataGrid ItemsSource="{Binding Events}" MaxHeight="320">
+                                <TextBlock Style="{StaticResource HeadingText}" Text="Event log (System and Application, newest first)" />
+                                <DataGrid ItemsSource="{Binding Events}" MaxHeight="280">
                                     <DataGrid.Columns>
                                         <DataGridTextColumn Header="Time (UTC)" Binding="{Binding TimeCreatedUtc, Mode=OneWay, StringFormat='yyyy-MM-dd HH:mm:ss'}" Width="140" />
                                         <DataGridTextColumn Header="Log" Binding="{Binding LogName, Mode=OneWay}" Width="85" />
-                                        <DataGridTextColumn Header="Provider" Binding="{Binding ProviderName, Mode=OneWay}" Width="190" />
+                                        <DataGridTextColumn Header="Provider" Binding="{Binding ProviderName, Mode=OneWay}" Width="180" />
                                         <DataGridTextColumn Header="ID" Binding="{Binding EventId, Mode=OneWay}" Width="55" />
                                         <DataGridTextColumn Header="Level" Binding="{Binding Level, Mode=OneWay}" Width="80" />
                                         <DataGridTextColumn Header="Message" Binding="{Binding Message, Mode=OneWay}" Width="*" />
                                     </DataGrid.Columns>
                                 </DataGrid>
 
-                                <TextBlock Style="{StaticResource SectionHeader}" Text="Collection gaps" />
-                                <ItemsControl ItemsSource="{Binding CollectionErrors}">
+                                <TextBlock Style="{StaticResource HeadingText}" Text="Collection gaps" />
+                                <ItemsControl ItemsSource="{Binding CollectionErrors}" Margin="0,0,0,16">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <TextBlock Text="{Binding Mode=OneWay}" TextWrapping="Wrap" Foreground="#A15C00" />
+                                            <TextBlock Style="{StaticResource BodyText}" Margin="0,2"
+                                                       Foreground="{StaticResource WarningFg}"
+                                                       Text="{Binding Mode=OneWay}" />
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
@@ -237,29 +479,75 @@
                         </ScrollViewer>
                     </TabItem>
 
-                    <!-- Export tab -->
+                    <!-- ============ Export ============ -->
                     <TabItem Header="Export">
-                        <StackPanel Margin="12" MaxWidth="720" HorizontalAlignment="Left">
-                            <TextBlock Text="Output folder" FontWeight="SemiBold" />
-                            <TextBox Text="{Binding OutputRoot, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,12" />
+                        <ScrollViewer Style="{StaticResource ScrollHost}" Margin="0,16,0,0">
+                            <Border Style="{StaticResource Card}" MaxWidth="700" HorizontalAlignment="Left">
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource ChipText}" Foreground="{StaticResource Ink500}"
+                                               Text="OUTPUT FOLDER" />
+                                    <TextBox Text="{Binding OutputRoot, UpdateSourceTrigger=PropertyChanged}"
+                                             Margin="0,6,0,18" />
 
-                            <CheckBox Content="HTML report (self-contained, for the ticket)" IsChecked="{Binding ExportHtml}" Margin="0,2" />
-                            <CheckBox Content="JSON (machine-readable, for fleet aggregation)" IsChecked="{Binding ExportJson}" Margin="0,2" />
-                            <CheckBox Content="Evidence zip (collected logs; never redacted — internal escalation only)" IsChecked="{Binding ExportZip}" Margin="0,2" />
+                                    <TextBlock Style="{StaticResource ChipText}" Foreground="{StaticResource Ink500}"
+                                               Text="WHAT TO WRITE" />
+                                    <CheckBox Content="HTML report — verdict, findings and evidence, for the ticket"
+                                              IsChecked="{Binding ExportHtml}" Margin="0,8,0,0" />
+                                    <CheckBox Content="JSON — machine-readable, for fleet aggregation"
+                                              IsChecked="{Binding ExportJson}" />
+                                    <CheckBox Content="Evidence zip — the collected logs, never redacted, internal escalation only"
+                                              IsChecked="{Binding ExportZip}" />
 
-                            <CheckBox Content="Redact usernames, profile paths and machine name in HTML/JSON (recommended)"
-                                      IsChecked="{Binding Redact}" Margin="0,12,0,2" FontWeight="SemiBold" />
+                                    <Border Margin="0,16,0,0" Padding="12" CornerRadius="4"
+                                            Background="{StaticResource InfoBg}" BorderBrush="{StaticResource InfoLine}"
+                                            BorderThickness="1">
+                                        <CheckBox IsChecked="{Binding Redact}" Margin="0"
+                                                  Content="Redact usernames, profile paths and machine name in HTML and JSON"
+                                                  FontWeight="SemiBold" Foreground="{StaticResource InfoFg}" />
+                                    </Border>
 
-                            <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
-                                <Button Content="Export" Command="{Binding ExportCommand}" Padding="18,6" />
-                                <Button Content="Open folder" Command="{Binding OpenExportFolderCommand}" Padding="14,6" Margin="8,0,0,0" />
-                            </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,18,0,0">
+                                        <Button Content="Export" Command="{Binding ExportCommand}"
+                                                Style="{StaticResource PrimaryButton}" />
+                                        <Button Content="Open folder" Command="{Binding OpenExportFolderCommand}"
+                                                Style="{StaticResource SecondaryButton}" Margin="10,0,0,0" />
+                                    </StackPanel>
 
-                            <TextBlock Text="{Binding ExportStatus, Mode=OneWay}" TextWrapping="Wrap" Margin="0,12,0,0" />
-                        </StackPanel>
+                                    <TextBlock Style="{StaticResource BodyText}" Margin="0,14,0,0"
+                                               Text="{Binding ExportStatus, Mode=OneWay}" />
+                                </StackPanel>
+                            </Border>
+                        </ScrollViewer>
                     </TabItem>
 
-                    <TabItem Header="Actions" IsEnabled="False" ToolTip="Remediation actions arrive in phase 4, once diagnosis is trusted." />
+                    <!-- ============ Timeline ============ -->
+                    <TabItem Header="Timeline">
+                        <DockPanel Margin="0,16,0,0">
+                            <TextBlock DockPanel.Dock="Top" Style="{StaticResource CaptionText}" Margin="0,0,0,10"
+                                       Text="Everything with a timestamp, newest first: Windows events, when each log was last written, upgrade folder changes, and running processes. Use it to bracket the failure — what the machine was doing, and what ended it." />
+                            <DataGrid ItemsSource="{Binding TimelineEntries}">
+                                <DataGrid.RowStyle>
+                                    <Style TargetType="DataGridRow">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SeverityText}" Value="Critical">
+                                                <Setter Property="Background" Value="{StaticResource CriticalBg}" />
+                                                <Setter Property="FontWeight" Value="SemiBold" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding SeverityText}" Value="Warning">
+                                                <Setter Property="Background" Value="{StaticResource WarningBg}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </DataGrid.RowStyle>
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="When (local)" Binding="{Binding LocalTimeText, Mode=OneWay}" Width="150" />
+                                    <DataGridTextColumn Header="Source" Binding="{Binding SourceText, Mode=OneWay}" Width="100" />
+                                    <DataGridTextColumn Header="What happened" Binding="{Binding Label, Mode=OneWay}" Width="330" />
+                                    <DataGridTextColumn Header="Detail" Binding="{Binding Detail, Mode=OneWay}" Width="*" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </DockPanel>
+                    </TabItem>
                 </TabControl>
             </DockPanel>
         </Grid>

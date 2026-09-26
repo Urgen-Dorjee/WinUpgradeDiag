@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 
 namespace WinUpgradeDiag.Core.IO
@@ -23,6 +24,50 @@ namespace WinUpgradeDiag.Core.IO
             Text = text;
             Before = before;
             After = after;
+        }
+    }
+
+    /// <summary>
+    /// Outcome of scanning one file for several signatures in a single pass.
+    /// </summary>
+    public sealed class MultiSearchResult
+    {
+        private readonly IReadOnlyDictionary<string, LogSearchResult> _byQuery;
+
+        public MultiSearchResult(
+            IReadOnlyDictionary<string, LogSearchResult> byQuery,
+            bool cancelled,
+            long bytesScanned,
+            long fileSizeBytes,
+            int linesScanned)
+        {
+            _byQuery = byQuery;
+            Cancelled = cancelled;
+            BytesScanned = bytesScanned;
+            FileSizeBytes = fileSizeBytes;
+            LinesScanned = linesScanned;
+        }
+
+        public bool Cancelled { get; }
+        public long BytesScanned { get; }
+        public long FileSizeBytes { get; }
+        public int LinesScanned { get; }
+
+        /// <summary>Every query that matched at least once.</summary>
+        public IEnumerable<string> MatchedQueries =>
+            _byQuery.Where(kv => kv.Value.Matches.Count > 0).Select(kv => kv.Key);
+
+        /// <summary>Result for one query; never null for a query that was asked for.</summary>
+        public LogSearchResult For(string query)
+        {
+            LogSearchResult result;
+            return _byQuery.TryGetValue(query, out result) ? result : null;
+        }
+
+        public bool HasMatch(string query)
+        {
+            var result = For(query);
+            return result != null && result.Matches.Count > 0;
         }
     }
 

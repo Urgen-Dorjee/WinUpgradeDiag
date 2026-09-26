@@ -10,6 +10,7 @@ using WinUpgradeDiag.Core.Collect;
 using WinUpgradeDiag.Core.IO;
 using WinUpgradeDiag.Core.Orchestration;
 using WinUpgradeDiag.Core.Report;
+using WinUpgradeDiag.Core.Rules;
 
 namespace WinUpgradeDiag.App.ViewModels
 {
@@ -65,6 +66,7 @@ namespace WinUpgradeDiag.App.ViewModels
                 async () => await SearchWholeFileAsync(),
                 () => !_isSearching && _selectedManifestRow != null && !string.IsNullOrWhiteSpace(_viewerFilter));
             CancelSearchCommand = new RelayCommand(() => _searchCts?.Cancel(), () => _isSearching);
+            CopyCommandCommand = new RelayCommand(CopyCommand, () => HasRecommendedCommand);
         }
 
         public RelayCommand RunCommand { get; }
@@ -73,8 +75,13 @@ namespace WinUpgradeDiag.App.ViewModels
         public RelayCommand OpenExportFolderCommand { get; }
         public RelayCommand SearchWholeFileCommand { get; }
         public RelayCommand CancelSearchCommand { get; }
+        public RelayCommand CopyCommandCommand { get; }
 
-        public string ToolVersion => "v" + DiagnosticRunner.ToolVersion;
+        /// <summary>Short form for the header: "v0.1.0 (f34aaba)".</summary>
+        public string ToolVersion => "v" + DiagnosticRunner.DisplayVersion;
+
+        /// <summary>Full build identity, shown on hover and written into reports.</summary>
+        public string ToolVersionFull => DiagnosticRunner.ToolVersion;
 
         // ---------------- Run state ----------------
 
@@ -162,6 +169,136 @@ namespace WinUpgradeDiag.App.ViewModels
         public ObservableCollection<FilterDriverInfo> FilterDrivers { get; } = new ObservableCollection<FilterDriverInfo>();
         public ObservableCollection<EventRecordInfo> Events { get; } = new ObservableCollection<EventRecordInfo>();
         public ObservableCollection<string> CollectionErrors { get; } = new ObservableCollection<string>();
+        public ObservableCollection<TimelineEntry> TimelineEntries { get; } = new ObservableCollection<TimelineEntry>();
+
+        public bool HasTimeline => TimelineEntries.Count > 0;
+
+        // ---------------- Verdict ----------------
+
+        public ObservableCollection<FindingRow> Findings { get; } = new ObservableCollection<FindingRow>();
+        public ObservableCollection<string> Gaps { get; } = new ObservableCollection<string>();
+
+        private string _verdictHeadline = "";
+        private string _verdictDetail = "";
+        private string _verdictKind = "";
+        private string _verdictSeverity = "Info";
+        private string _recommendedAction = "";
+        private string _recommendedCommand = "";
+
+        /// <summary>The one sentence a technician reads first.</summary>
+        public string VerdictHeadline
+        {
+            get => _verdictHeadline;
+            private set => Set(ref _verdictHeadline, value);
+        }
+
+        public string VerdictDetail
+        {
+            get => _verdictDetail;
+            private set => Set(ref _verdictDetail, value);
+        }
+
+        public string VerdictKindText
+        {
+            get => _verdictKind;
+            private set => Set(ref _verdictKind, value);
+        }
+
+        /// <summary>Drives the verdict card colour: Info, Warning or Critical.</summary>
+        public string VerdictSeverity
+        {
+            get => _verdictSeverity;
+            private set => Set(ref _verdictSeverity, value);
+        }
+
+        public string RecommendedAction
+        {
+            get => _recommendedAction;
+            private set => Set(ref _recommendedAction, value);
+        }
+
+        public string RecommendedCommand
+        {
+            get => _recommendedCommand;
+            private set => Set(ref _recommendedCommand, value);
+        }
+
+        public bool HasRecommendedAction => !string.IsNullOrWhiteSpace(RecommendedAction);
+        public bool HasRecommendedCommand => !string.IsNullOrWhiteSpace(RecommendedCommand);
+        public bool HasGaps => Gaps.Count > 0;
+        public bool HasFindings => Findings.Count > 0;
+
+        private void PopulateVerdict()
+        {
+            Findings.Clear();
+            Gaps.Clear();
+
+            var verdict = _context?.Verdict;
+            if (verdict == null)
+            {
+                VerdictHeadline = "The diagnostic did not complete.";
+                VerdictDetail = "No verdict was produced. Check the Logs and System tabs for what was collected.";
+                VerdictSeverity = "Warning";
+                VerdictKindText = "Incomplete";
+                RecommendedAction = "";
+                RecommendedCommand = "";
+            }
+            else
+            {
+                VerdictHeadline = verdict.Headline;
+                VerdictDetail = verdict.Detail;
+                VerdictSeverity = verdict.DisplaySeverity.ToString();
+                VerdictKindText = Humanise(verdict.Kind);
+
+                var top = verdict.TopFinding;
+                RecommendedAction = top?.Action ?? "";
+                RecommendedCommand = top?.Command ?? "";
+
+                // Only the leading finding starts open; the rest stay collapsed so the answer is
+                // visible without scrolling (DESIGN.md §5).
+                var first = true;
+                foreach (var finding in verdict.Findings)
+                {
+                    Findings.Add(new FindingRow(finding, expanded: first));
+                    first = false;
+                }
+
+                foreach (var gap in verdict.Gaps)
+                {
+                    Gaps.Add(gap);
+                }
+            }
+
+            OnPropertyChanged(nameof(HasRecommendedAction));
+            OnPropertyChanged(nameof(HasRecommendedCommand));
+            OnPropertyChanged(nameof(HasGaps));
+            OnPropertyChanged(nameof(HasFindings));
+        }
+
+        private static string Humanise(VerdictKind kind)
+        {
+            switch (kind)
+            {
+                case VerdictKind.InProgress: return "Upgrade in progress";
+                case VerdictKind.CauseIdentified: return "Cause identified";
+                case VerdictKind.Inconclusive: return "Inconclusive";
+                case VerdictKind.NoFailureFound: return "No failure found";
+                case VerdictKind.InsufficientEvidence: return "Insufficient evidence";
+                default: return kind.ToString();
+            }
+        }
+
+        private void CopyCommand()
+        {
+            try
+            {
+                System.Windows.Clipboard.SetText(RecommendedCommand ?? "");
+            }
+            catch (Exception)
+            {
+                // The clipboard can be locked by another process; not worth interrupting the tech.
+            }
+        }
 
         private void PopulateResults()
         {
@@ -178,11 +315,20 @@ namespace WinUpgradeDiag.App.ViewModels
                 ManifestRows.Add(new ManifestRow(entry));
             }
 
+            PopulateVerdict();
+
+            TimelineEntries.Clear();
+            foreach (var entry in TimelineBuilder.Build(_context))
+            {
+                TimelineEntries.Add(entry);
+            }
+            OnPropertyChanged(nameof(HasTimeline));
+
             var s = _context.SystemState;
             if (s != null)
             {
                 AddFact("Machine", s.MachineName);
-                AddFact("OS", s.Os == null ? null : $"{s.Os.ProductName} {s.Os.DisplayVersion} (build {s.Os.CurrentBuildNumber}.{s.Os.Ubr})");
+                AddFact("OS", s.Os?.FullDescription);
                 AddFact("Edition", s.Os?.EditionId);
                 AddFact("Running elevated", YesNo(s.IsElevated));
                 AddFact("Backup privilege for protected logs", _context.PrivilegedReadEnabled ? "Enabled" : "Not available: " + _context.PrivilegedReadError);

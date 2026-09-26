@@ -4,6 +4,7 @@ using System.Linq;
 using WinUpgradeDiag.Core.Collect;
 using WinUpgradeDiag.Core.Orchestration;
 using WinUpgradeDiag.Core.Redaction;
+using WinUpgradeDiag.Core.Rules;
 
 namespace WinUpgradeDiag.Core.Report
 {
@@ -34,8 +35,33 @@ namespace WinUpgradeDiag.Core.Report
                     ["enabled"] = context.PrivilegedReadEnabled,
                     ["error"] = context.PrivilegedReadError
                 },
-                ["verdict"] = null, // phase 2
-                ["findings"] = new object[0], // phase 2
+                ["verdict"] = context.Verdict == null ? null : new Dictionary<string, object>
+                {
+                    ["kind"] = context.Verdict.Kind.ToString(),
+                    ["headline"] = r(context.Verdict.Headline),
+                    ["detail"] = r(context.Verdict.Detail),
+                    ["severity"] = context.Verdict.DisplaySeverity.ToString(),
+                    ["criticalCount"] = context.Verdict.CriticalCount,
+                    ["warningCount"] = context.Verdict.WarningCount,
+                    ["gaps"] = context.Verdict.Gaps.Select(r).ToList()
+                },
+                ["findings"] = (context.Verdict?.Findings ?? new List<Finding>())
+                    .Select(f => (object)new Dictionary<string, object>
+                    {
+                        ["id"] = f.Id,
+                        ["title"] = r(f.Title),
+                        ["severity"] = f.Severity.ToString(),
+                        ["confidence"] = f.Confidence.ToString(),
+                        ["meaning"] = r(f.Meaning),
+                        ["action"] = r(f.Action),
+                        ["command"] = r(f.Command),
+                        ["evidence"] = f.Evidence.Select(e => (object)new Dictionary<string, object>
+                        {
+                            ["source"] = r(e.Source),
+                            ["line"] = e.LineNumber,
+                            ["text"] = r(e.Text)
+                        }).ToList()
+                    }).ToList(),
                 ["system"] = BuildSystem(state, r),
                 ["manifest"] = context.Manifest.Select(e => (object)new Dictionary<string, object>
                 {
@@ -64,7 +90,9 @@ namespace WinUpgradeDiag.Core.Report
                 ["isElevated"] = s.IsElevated,
                 ["os"] = s.Os == null ? null : new Dictionary<string, object>
                 {
-                    ["productName"] = s.Os.ProductName,
+                    ["productName"] = s.Os.DisplayName,
+                    ["productNameRaw"] = s.Os.ProductName,
+                    ["isWindows11"] = s.Os.IsWindows11,
                     ["edition"] = s.Os.EditionId,
                     ["displayVersion"] = s.Os.DisplayVersion,
                     ["build"] = s.Os.CurrentBuildNumber,

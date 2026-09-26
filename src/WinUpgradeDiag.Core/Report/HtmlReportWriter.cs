@@ -41,8 +41,7 @@ namespace WinUpgradeDiag.Core.Report
               .Append(redactor != null ? " &middot; <strong>Redacted</strong>" : " &middot; <strong class=\"warn\">NOT redacted</strong>")
               .AppendLine("</p>");
 
-            sb.AppendLine("<div class=\"card info\"><strong>No verdict in this version.</strong> " +
-                          "This report lists what was found on the machine. Automated diagnosis arrives in a later release.</div>");
+            WriteVerdict(sb, context, r);
 
             if (context.Cancelled)
             {
@@ -56,8 +55,7 @@ namespace WinUpgradeDiag.Core.Report
 
             // --- System ---
             sb.AppendLine("<h2>System</h2><table>");
-            Row(sb, "OS", s0.Os == null ? null :
-                string.Join(" ", new[] { s0.Os.ProductName, s0.Os.DisplayVersion, "build " + s0.Os.CurrentBuildNumber + "." + s0.Os.Ubr }.Where(x => x != null)));
+            Row(sb, "OS", s0.Os?.FullDescription);
             Row(sb, "Edition", s0.Os?.EditionId);
             Row(sb, "Elevated", YesNo(s0.IsElevated));
             Row(sb, "Setup progress (registry)", s0.SetupProgressPercent.HasValue
@@ -165,7 +163,144 @@ namespace WinUpgradeDiag.Core.Report
             ".card{padding:10px 12px;border-radius:4px;margin:12px 0;font-size:13px}" +
             ".info{background:#eef4fb;border:1px solid #b9d3ee}.card.warn{background:#fff4e5;border:1px solid #f0c27b}" +
             "span.warn,strong.warn{color:#a15c00}.hv td{background:#fffbe6}.dim td{color:#999}" +
-            ".path{font-family:Consolas,monospace;word-break:break-all}.msg{white-space:pre-wrap}";
+            ".path{font-family:Consolas,monospace;word-break:break-all}.msg{white-space:pre-wrap}" +
+            // Verdict and findings
+            ".verdict{border-radius:6px;border:1px solid;padding:18px 20px;margin:16px 0}" +
+            ".verdict .kind{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;opacity:.85}" +
+            ".verdict .headline{font-size:20px;margin:8px 0 0;border:0;padding:0}" +
+            ".verdict .detail{font-size:14px;line-height:1.5;margin:10px 0 0;color:#333}" +
+            ".verdict .action{background:#fff;border:1px solid #ddd;border-radius:4px;padding:14px;margin-top:16px}" +
+            ".label{font-size:11px;font-weight:700;letter-spacing:.06em;color:#666}" +
+            "pre.cmd{background:#14181f;color:#e6edf3;padding:10px 12px;border-radius:4px;overflow-x:auto;font-size:12px;white-space:pre-wrap;word-break:break-all}" +
+            ".finding{border:1px solid #e3e7ec;border-left-width:4px;border-radius:5px;padding:14px 16px;margin:10px 0;background:#fff}" +
+            ".fhead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}" +
+            ".fhead .ftitle{font-size:15px;font-weight:600;flex:1}" +
+            ".fhead .conf{font-size:11px;color:#666;white-space:nowrap}" +
+            ".badge{font-size:11px;font-weight:700;padding:2px 7px;border-radius:3px;border:1px solid}" +
+            ".sev-critical{border-left-color:#8e1f1f}.sev-critical .badge{color:#8e1f1f;background:#fdecec;border-color:#f0bdbd}" +
+            ".sev-warning{border-left-color:#8a5200}.sev-warning .badge{color:#8a5200;background:#fff6e6;border-color:#f3d39a}" +
+            ".sev-info{border-left-color:#1b4f7a}.sev-info .badge{color:#1b4f7a;background:#edf4fb;border-color:#b9d3ee}" +
+            ".verdict.sev-critical{background:#fdecec;border-color:#f0bdbd;color:#8e1f1f}" +
+            ".verdict.sev-warning{background:#fff6e6;border-color:#f3d39a;color:#8a5200}" +
+            ".verdict.sev-info{background:#edf4fb;border-color:#b9d3ee;color:#1b4f7a}" +
+            ".evidence{background:#f7f8fa;border:1px solid #e3e7ec;border-radius:4px;padding:10px 12px;margin-top:12px}" +
+            ".esrc{font-size:11px;color:#666;margin-top:8px}" +
+            "pre.eline{font-family:Consolas,monospace;font-size:12px;background:#fff;border:1px solid #e3e7ec;border-radius:3px;padding:7px 9px;margin:3px 0 0;overflow-x:auto;white-space:pre-wrap;word-break:break-all}";
+
+        /// <summary>
+        /// The verdict, the recommended action and the ranked findings — written first, because a
+        /// report attached to a ticket has to answer the question on its opening screen rather than
+        /// make the reader scroll through a manifest.
+        /// </summary>
+        private static void WriteVerdict(StringBuilder sb, DiagnosticContext context, Func<string, string> r)
+        {
+            var verdict = context.Verdict;
+            if (verdict == null)
+            {
+                sb.AppendLine("<div class=\"card warn\"><strong>No verdict was produced.</strong> " +
+                              "The run did not reach the rules stage; the collected state is below.</div>");
+                return;
+            }
+
+            var cls = SeverityClass(verdict.DisplaySeverity);
+
+            sb.Append("<div class=\"verdict ").Append(cls).AppendLine("\">");
+            sb.Append("<div class=\"kind\">").Append(E(Humanise(verdict.Kind))).AppendLine("</div>");
+            sb.Append("<h2 class=\"headline\">").Append(E(r(verdict.Headline))).AppendLine("</h2>");
+            sb.Append("<p class=\"detail\">").Append(E(r(verdict.Detail))).AppendLine("</p>");
+
+            var top = verdict.TopFinding;
+            if (top != null && !string.IsNullOrWhiteSpace(top.Action))
+            {
+                sb.AppendLine("<div class=\"action\"><div class=\"label\">RECOMMENDED ACTION</div>");
+                sb.Append("<p>").Append(E(r(top.Action))).AppendLine("</p>");
+                if (top.HasCommand)
+                {
+                    sb.Append("<pre class=\"cmd\">").Append(E(r(top.Command))).AppendLine("</pre>");
+                    sb.AppendLine("<p class=\"meta\">Review before running. This tool never executes commands.</p>");
+                }
+                sb.AppendLine("</div>");
+            }
+            sb.AppendLine("</div>");
+
+            if (verdict.HasGaps)
+            {
+                sb.AppendLine("<div class=\"card warn\"><strong>What could not be checked.</strong> " +
+                              "A clean result from a partial collection is not the same as a clean machine.<ul>");
+                foreach (var gap in verdict.Gaps)
+                {
+                    sb.Append("<li>").Append(E(r(gap))).AppendLine("</li>");
+                }
+                sb.AppendLine("</ul></div>");
+            }
+
+            sb.Append("<h2>Findings</h2>");
+            if (!verdict.HasFindings)
+            {
+                sb.AppendLine("<p class=\"meta\">Nothing in the collected state or the logs that were read matched a known failure pattern.</p>");
+                return;
+            }
+
+            sb.AppendLine("<p class=\"meta\">Ranked by how likely each is to be the cause. Every finding quotes the evidence that produced it.</p>");
+
+            foreach (var finding in verdict.Findings)
+            {
+                sb.Append("<div class=\"finding ").Append(SeverityClass(finding.Severity)).AppendLine("\">");
+                sb.Append("<div class=\"fhead\"><span class=\"badge\">").Append(E(finding.SeverityText))
+                  .Append("</span><span class=\"ftitle\">").Append(E(r(finding.Title)))
+                  .Append("</span><span class=\"conf\">").Append(E(finding.ConfidenceText))
+                  .Append(" &middot; ").Append(E(finding.Id)).AppendLine("</span></div>");
+
+                sb.Append("<p>").Append(E(r(finding.Meaning))).AppendLine("</p>");
+                sb.Append("<p><strong>What to do:</strong> ").Append(E(r(finding.Action))).AppendLine("</p>");
+
+                if (finding.HasCommand)
+                {
+                    sb.Append("<pre class=\"cmd\">").Append(E(r(finding.Command))).AppendLine("</pre>");
+                }
+
+                if (finding.HasEvidence)
+                {
+                    sb.AppendLine("<div class=\"evidence\"><div class=\"label\">EVIDENCE</div>");
+                    foreach (var evidence in finding.Evidence)
+                    {
+                        sb.Append("<div class=\"esrc\">").Append(E(r(evidence.Source)));
+                        if (evidence.LineNumber.HasValue)
+                        {
+                            sb.Append("  line ").Append(evidence.LineNumber.Value.ToString("N0", CultureInfo.InvariantCulture));
+                        }
+                        sb.AppendLine("</div>");
+                        sb.Append("<pre class=\"eline\">").Append(E(r(evidence.Text))).AppendLine("</pre>");
+                    }
+                    sb.AppendLine("</div>");
+                }
+
+                sb.AppendLine("</div>");
+            }
+        }
+
+        private static string SeverityClass(Rules.Severity severity)
+        {
+            switch (severity)
+            {
+                case Rules.Severity.Critical: return "sev-critical";
+                case Rules.Severity.Warning: return "sev-warning";
+                default: return "sev-info";
+            }
+        }
+
+        private static string Humanise(Rules.VerdictKind kind)
+        {
+            switch (kind)
+            {
+                case Rules.VerdictKind.InProgress: return "Upgrade in progress";
+                case Rules.VerdictKind.CauseIdentified: return "Cause identified";
+                case Rules.VerdictKind.Inconclusive: return "Inconclusive";
+                case Rules.VerdictKind.NoFailureFound: return "No failure found";
+                case Rules.VerdictKind.InsufficientEvidence: return "Insufficient evidence";
+                default: return kind.ToString();
+            }
+        }
 
         private static void Row(StringBuilder sb, string label, string value)
         {

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using WinUpgradeDiag.Core.Collect;
 using WinUpgradeDiag.Core.Discovery;
+using WinUpgradeDiag.Core.Rules;
 
 namespace WinUpgradeDiag.Core.Orchestration
 {
@@ -20,6 +21,12 @@ namespace WinUpgradeDiag.Core.Orchestration
 
         public IReadOnlyList<LogManifestEntry> Manifest { get; set; } = new List<LogManifestEntry>();
         public SystemState SystemState { get; set; }
+
+        /// <summary>
+        /// What the run concluded. Null only if the rules stage did not run (for example the run
+        /// was cancelled during collection).
+        /// </summary>
+        public Verdict Verdict { get; set; }
 
         public bool Cancelled { get; set; }
     }
