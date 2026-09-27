@@ -26,6 +26,13 @@ namespace WinUpgradeDiag.Core.Rules
         /// <summary>NAND wear at or above this is worth flagging even if it is not today's cause.</summary>
         public const ulong WearWarningThreshold = 90;
 
+        /// <summary>
+        /// Processes whose presence means an upgrade is genuinely in flight. Used both to raise
+        /// TS-002 and to suppress TS-001, so the two can never disagree about what "live" means.
+        /// </summary>
+        public static readonly IReadOnlyList<string> LiveUpgradeProcessNames =
+            new[] { "TSManager", "SetupHost", "setupprep" };
+
         private readonly LogSearcher _searcher = new LogSearcher();
 
         public Verdict Evaluate(
@@ -42,6 +49,7 @@ namespace WinUpgradeDiag.Core.Rules
             var findings = new List<Finding>();
 
             findings.AddRange(EvaluateLiveUpgrade(state));
+            findings.AddRange(EvaluateSetupProgress(context, state));
             findings.AddRange(EvaluateHardware(state));
             findings.AddRange(EvaluateTaskSequence(state));
             findings.AddRange(EvaluateRollback(context));
@@ -69,9 +77,7 @@ namespace WinUpgradeDiag.Core.Rules
                 yield break;
             }
 
-            var live = new[] { "TSManager", "SetupHost", "setupprep" }
-                .Where(processes.IsRunning)
-                .ToList();
+            var live = LiveUpgradeProcessNames.Where(processes.IsRunning).ToList();
 
             if (live.Count == 0)
             {
@@ -99,6 +105,156 @@ namespace WinUpgradeDiag.Core.Rules
                 "A Setup phase that appears frozen near the end is usually still working.",
                 "Do not clear the task sequence, delete content, or restart the client. Wait, and re-run this " +
                 "diagnostic later if it has not finished.",
+                evidence);
+        }
+
+        // ----------------------------------------------------------------- stuck at 99%?
+
+        /// <summary>Setup written to within this long is demonstrably still working (SU-001).</summary>
+        public static readonly TimeSpan SetupActiveWindow = TimeSpan.FromMinutes(5);
+
+        /// <summary>Setup silent for longer than this is a candidate for genuinely blocked (SU-002).</summary>
+        public static readonly TimeSpan SetupStalledWindow = TimeSpan.FromMinutes(30);
+
+        /// <summary>
+        /// SU-001 / SU-002 / SU-003 — the "stuck at 99%" question.
+        /// <para>
+        /// The percentage on screen is not evidence. It comes from the task sequence, not from
+        /// Setup, and it saturates near the end while a great deal of work remains. Two things
+        /// decide whether an upgrade is alive: is Setup still writing to its log, and is it using
+        /// CPU. This rule answers with those, and refuses to answer without them.
+        /// </para>
+        /// </summary>
+        private static IEnumerable<Finding> EvaluateSetupProgress(DiagnosticContext context, SystemState state)
+        {
+            var processes = state.Processes;
+            if (processes == null)
+            {
+                yield break;
+            }
+
+            var worker = new[] { "SetupHost", "setupprep" }
+                .Select(n => processes.Processes.FirstOrDefault(p =>
+                    p.IsRunning && string.Equals(p.Name, n, StringComparison.OrdinalIgnoreCase)))
+                .FirstOrDefault(p => p != null);
+
+            // Newest write across the in-progress Setup logs: Setup's own heartbeat.
+            var setupLog = context.Manifest
+                .Where(m => m.Exists && m.LastWriteTimeUtc.HasValue)
+                .Where(m => m.Source.Category == LogSourceCategory.SetupCurrent ||
+                            m.Source.Category == LogSourceCategory.SetupRollback)
+                .OrderByDescending(m => m.LastWriteTimeUtc.Value)
+                .FirstOrDefault();
+
+            var progressShown = state.SetupProgressPercent;
+
+            if (worker == null)
+            {
+                // SU-003: nothing is running, yet the machine still reports a Setup percentage.
+                if (progressShown.HasValue)
+                {
+                    yield return new Finding(
+                        "SU-003",
+                        "Setup is no longer running, but the machine still reports " + progressShown.Value + "% progress",
+                        Severity.Critical,
+                        Confidence.High,
+                        "The progress value in the registry is left over from an attempt that has already ended. " +
+                        "Any progress dialog still on screen is stale and will never advance — the upgrade stopped, " +
+                        "it is not still working.",
+                        "Do not keep waiting. Find how the attempt ended: read the Setup exit code in smsts.log, " +
+                        "and check the Timeline tab for a restart or crash around the time the Setup log stopped.",
+                        new[]
+                        {
+                            new Evidence("Registry: SYSTEM\\Setup\\MoSetup\\Volatile", null,
+                                "SetupProgress = " + progressShown.Value + "%"),
+                            new Evidence("Running processes", null, "Neither SetupHost nor setupprep is running")
+                        });
+                }
+                yield break;
+            }
+
+            // A worker is alive. Decide working vs blocked from log freshness and CPU, not the bar.
+            var evidence = new List<Evidence>
+            {
+                new Evidence("Running processes", null,
+                    worker.Name + " is running (pid " +
+                    (worker.ProcessId?.ToString(CultureInfo.InvariantCulture) ?? "unknown") + ")" +
+                    (string.IsNullOrEmpty(worker.RunningFor) ? "" : ", started " + worker.RunningFor + " ago"))
+            };
+
+            if (worker.CpuPercent.HasValue)
+            {
+                evidence.Add(new Evidence("CPU sample", null,
+                    worker.Name + " used " + worker.CpuText + " of one core during the sample window"));
+            }
+
+            if (setupLog == null)
+            {
+                yield return new Finding(
+                    "SU-002",
+                    "Setup is running, but its log could not be read to confirm it is making progress",
+                    Severity.Warning,
+                    Confidence.Low,
+                    "Setup is alive, so the upgrade has not obviously died. Without its log there is no way to " +
+                    "tell whether it is working or blocked, and the percentage on screen does not distinguish them.",
+                    "Re-run this tool elevated so the protected Setup logs under $WINDOWS.~BT can be read.",
+                    evidence);
+                yield break;
+            }
+
+            var age = DateTime.UtcNow - setupLog.LastWriteTimeUtc.Value;
+            evidence.Add(new Evidence(setupLog.ResolvedPath, null,
+                "Last written " + ProcessInfo.Describe(age) + " ago"));
+
+            if (age <= SetupActiveWindow || worker.IsBusy)
+            {
+                var because = age <= SetupActiveWindow
+                    ? "Setup wrote to its log " + ProcessInfo.Describe(age) + " ago"
+                    : worker.Name + " is using " + worker.CpuText + " CPU";
+
+                yield return new Finding(
+                    "SU-001",
+                    "The upgrade is still working — including if it shows 99%",
+                    Severity.Info,
+                    Confidence.High,
+                    because + ", so this machine is progressing rather than hung. The percentage is reported by the " +
+                    "task sequence, not by Setup, and it sits at 99% through the longest part of the job — applying " +
+                    "the image and migrating user data. Several hours at 99% is normal on a slow disk.",
+                    "Leave it alone. Do not restart the machine, clear the task sequence, or kill Setup. " +
+                    "Re-run this diagnostic later if it has still not finished.",
+                    evidence);
+                yield break;
+            }
+
+            if (age >= SetupStalledWindow)
+            {
+                var idle = worker.CpuPercent.HasValue && !worker.IsBusy;
+
+                yield return new Finding(
+                    "SU-002",
+                    "Setup is running but appears blocked — no log activity for " + ProcessInfo.Describe(age),
+                    Severity.Critical,
+                    idle ? Confidence.Medium : Confidence.Low,
+                    "Setup has not written to its log for " + ProcessInfo.Describe(age) +
+                    (idle ? ", and is using almost no CPU" : "") +
+                    ". That combination points to a blocked operation rather than slow progress — commonly a driver " +
+                    "or filter driver that is not returning, or a device that is not responding.",
+                    "Read the last lines of the Setup log in the Logs tab: the final entry names the operation it is " +
+                    "waiting on. Check the Timeline tab for a device or service failure at that time. Do not restart " +
+                    "yet — a restart here usually produces a rollback and destroys the evidence.",
+                    evidence);
+                yield break;
+            }
+
+            yield return new Finding(
+                "SU-001",
+                "The upgrade is running; no log activity for " + ProcessInfo.Describe(age),
+                Severity.Info,
+                Confidence.Medium,
+                "Setup is alive but has been quiet for a few minutes. That is within normal range — long single " +
+                "operations such as applying the image produce no log output while they run.",
+                "Wait, and re-run this diagnostic in ten minutes. If the log is still untouched then, it is blocked " +
+                "rather than slow.",
                 evidence);
         }
 
@@ -180,9 +336,13 @@ namespace WinUpgradeDiag.Core.Rules
                 yield break;
             }
 
-            // TS-001 requires BOTH halves: a surviving WMI lock AND no live engine. AGENTS.md calls
-            // out that the tool must never advise cleanup while TSManager is alive.
-            if (processes.IsRunning("TSManager"))
+            // TS-001 requires BOTH halves: a surviving WMI lock AND no live upgrade.
+            //
+            // Every upgrade worker counts, not just TSManager. There are windows during an in-place
+            // upgrade where Setup is running and TSManager is not, and in those the execution
+            // request in WMI is legitimate rather than orphaned. Recommending cleanup there would
+            // destroy a healthy upgrade — the one mistake AGENTS.md says this tool must never make.
+            if (LiveUpgradeProcessNames.Any(processes.IsRunning))
             {
                 yield break;
             }
@@ -454,11 +614,28 @@ namespace WinUpgradeDiag.Core.Rules
             var live = findings.FirstOrDefault(f => f.Id == "TS-002");
             if (live != null)
             {
+                // If the Setup-progress rules ran, let their more specific conclusion lead: the
+                // difference between "working at 99%" and "blocked at 99%" is the whole question.
+                var setupState = findings.FirstOrDefault(f => f.Id == "SU-001" || f.Id == "SU-002");
+
+                if (setupState != null && setupState.Id == "SU-002" && setupState.Severity == Severity.Critical)
+                {
+                    return new Verdict(
+                        VerdictKind.CauseIdentified,
+                        setupState.Title,
+                        setupState.Meaning,
+                        findings, gaps);
+                }
+
                 return new Verdict(
                     VerdictKind.InProgress,
-                    "An upgrade is in progress on this machine — leave it alone.",
-                    "Setup or the task sequence engine is still running. A Setup phase can sit near the end for a long " +
-                    "time and still be working. Clearing the task sequence now would break a healthy upgrade.",
+                    setupState != null
+                        ? setupState.Title + " — leave it alone."
+                        : "An upgrade is in progress on this machine — leave it alone.",
+                    setupState != null
+                        ? setupState.Meaning
+                        : "Setup or the task sequence engine is still running. A Setup phase can sit near the end for " +
+                          "a long time and still be working. Clearing the task sequence now would break a healthy upgrade.",
                     findings, gaps);
             }
 

@@ -31,7 +31,14 @@ namespace WinUpgradeDiag.Core.Collect
 
             Step(state, progress, cancellationToken, "Checking free space and upgrade folders", () => CollectFileSystem(state));
 
-            Step(state, progress, cancellationToken, "Checking upgrade processes", () => state.Processes = new ProcessCollector().Collect());
+            Step(state, progress, cancellationToken, "Checking upgrade processes", () =>
+            {
+                // Samples CPU only when an upgrade worker is actually alive, so a machine that has
+                // already failed costs nothing, and one sitting at 99% gets the measurement that
+                // decides whether it is working or wedged.
+                state.Processes = new ProcessCollector()
+                    .CollectWithCpuSample(ProcessCollector.DefaultCpuSampleWindow, cancellationToken);
+            });
 
             Step(state, progress, cancellationToken, "Querying task sequence execution request (WMI)", () =>
             {

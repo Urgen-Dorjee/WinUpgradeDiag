@@ -424,7 +424,17 @@
                                     <DataGrid.Columns>
                                         <DataGridTextColumn Header="Process" Binding="{Binding Name, Mode=OneWay}" Width="180" />
                                         <DataGridTextColumn Header="Running" Binding="{Binding IsRunning, Mode=OneWay}" Width="80" />
-                                        <DataGridTextColumn Header="PID" Binding="{Binding ProcessId, Mode=OneWay}" Width="80" />
+                                        <DataGridTextColumn Header="PID" Binding="{Binding ProcessId, Mode=OneWay}" Width="70" />
+                                        <DataGridTextColumn Header="Copies" Binding="{Binding InstanceCount, Mode=OneWay}" Width="60" />
+                                        <DataGridTextColumn Header="CPU now" Binding="{Binding CpuText, Mode=OneWay}" Width="80">
+                                            <DataGridTextColumn.ElementStyle>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="ToolTip"
+                                                            Value="CPU used during a short sample, as a percentage of one core. Near zero on a running Setup means blocked, not busy." />
+                                                </Style>
+                                            </DataGridTextColumn.ElementStyle>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Header="Running for" Binding="{Binding RunningFor, Mode=OneWay}" Width="130" />
                                         <DataGridTextColumn Header="Started (UTC)" Binding="{Binding StartTimeUtc, Mode=OneWay, StringFormat='yyyy-MM-dd HH:mm:ss'}" Width="*" />
                                     </DataGrid.Columns>
                                 </DataGrid>
