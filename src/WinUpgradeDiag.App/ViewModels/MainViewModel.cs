@@ -386,9 +386,11 @@ namespace WinUpgradeDiag.App.ViewModels
 
         // ---------------- status bar ----------------
 
-        /// <summary>Machine and privilege, shown in the status bar from launch onwards.</summary>
-        public string MachineName => Environment.MachineName;
-
+        /// <summary>
+        /// Privilege state, shown in the status bar from launch onwards. The computer name used to
+        /// sit beside it; it is collected where it is diagnostically useful and redacted on the way
+        /// out, so there is no reason to keep it on screen for the whole session.
+        /// </summary>
         public string ElevationText => IsElevatedSession
             ? "Administrator"
             : "Not elevated — protected logs cannot be read";

@@ -95,10 +95,6 @@
                                Text="{Binding LastRunText, Mode=OneWay}" />
                 </StackPanel>
                 <StackPanel Orientation="Horizontal">
-                    <TextBlock Foreground="#FFC9D6E8" FontSize="11" VerticalAlignment="Center"
-                               Text="{Binding MachineName, Mode=OneWay}" />
-                    <TextBlock Foreground="#FF6B8299" FontSize="11" VerticalAlignment="Center"
-                               Margin="10,0" Text="|" />
                     <TextBlock FontSize="11" VerticalAlignment="Center"
                                Text="{Binding ElevationText, Mode=OneWay}">
                         <TextBlock.Style>
