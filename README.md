@@ -46,6 +46,28 @@ tests/WinUpgradeDiag.Tests/  xUnit tests + fixture logs in tests/fixtures/
 docs/
 ```
 
+## Deploying to a problem machine
+
+The build produces **one file**: `WinUpgradeDiag.exe` (about 400 KB). The Core assembly and all 12
+recovery scripts are embedded inside it, so nothing else needs to be copied alongside. One file
+also means one hash to code-sign and one hash to allow-list.
+
+**Requirements on the target machine**
+
+| | |
+| --- | --- |
+| .NET Framework | **4.8** — in-box on Windows 10 1903 and later, and on Windows 11. Nothing to install on a fleet running 20H2/21H2/22H2. |
+| Older Windows 10 | 1809 and earlier ship 4.7.2; those need the 4.8 runtime installed first. |
+| Privileges | Runs unelevated, but the protected Setup logs under `$WINDOWS.~BT` need administrator. The status bar says which you have. |
+| Network | None. The tool makes no outbound connection of any kind. |
+
+**Getting it there.** `docs/SECURITY.md` is explicit that technicians should not download executables
+from the internet onto managed endpoints — that is the exact pattern endpoint security hunts for, and
+it is likely a policy violation regardless of the tool's quality. Distribute it the same way you
+distribute anything else: a ConfigMgr package or Run Script, an internal file share, or a signed copy
+on managed removable media. Code-sign it with the organisation's internal certificate and allow-list
+that hash with the endpoint security team before any pilot.
+
 ## Building
 
 Requires Windows with the .NET Framework 4.8 targeting pack (Visual Studio 2019+ or the .NET

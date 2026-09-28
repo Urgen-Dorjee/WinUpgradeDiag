@@ -5,6 +5,16 @@ namespace WinUpgradeDiag.App
 {
     public partial class App : Application
     {
+        /// <summary>
+        /// Installs the embedded-assembly resolver before anything else runs. It has to be a static
+        /// constructor: the runtime resolves a dependency the first time a method using it is
+        /// executed, so registering later — in OnStartup, say — can already be too late.
+        /// </summary>
+        static App()
+        {
+            EmbeddedAssemblyLoader.Install();
+        }
+
         protected override void OnStartup(StartupEventArgs e)
         {
             DispatcherUnhandledException += OnDispatcherUnhandledException;

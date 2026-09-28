@@ -206,16 +206,33 @@ namespace WinUpgradeDiag.Tests.IO
         [Fact]
         public void Progress_runs_from_start_to_completion()
         {
-            var reported = new System.Collections.Generic.List<double>();
+            // A synchronous collector rather than Progress<T>: that marshals callbacks to another
+            // thread, so the assertions raced the reports and the list was mutated while being
+            // enumerated. Collecting inline on the scanning thread makes the test deterministic.
+            var reported = new CollectingProgress();
             var text = Lines(200000, i => "line " + i);
 
-            new LogSearcher().Search(Utf8(text), "line 199999",
-                progress: new Progress<double>(reported.Add));
+            new LogSearcher().Search(Utf8(text), "line 199999", progress: reported);
 
-            // Progress is marshalled asynchronously; give it a moment to drain.
-            SpinWait.SpinUntil(() => reported.Count > 0 && reported[reported.Count - 1] >= 1.0, 2000);
-            Assert.NotEmpty(reported);
-            Assert.All(reported, p => Assert.InRange(p, 0.0, 1.0));
+            var values = reported.Values;
+            Assert.NotEmpty(values);
+            Assert.All(values, p => Assert.InRange(p, 0.0, 1.0));
+            Assert.Equal(1.0, values[values.Count - 1], 3);      // finishes at 100%
+            Assert.True(values.SequenceEqual(values.OrderBy(v => v)), "progress went backwards");
+        }
+
+        /// <summary>Records progress on the calling thread, so tests never race the reports.</summary>
+        private sealed class CollectingProgress : IProgress<double>
+        {
+            private readonly System.Collections.Generic.List<double> _values =
+                new System.Collections.Generic.List<double>();
+
+            public System.Collections.Generic.IReadOnlyList<double> Values => _values;
+
+            public void Report(double value)
+            {
+                _values.Add(value);
+            }
         }
 
         [Fact]

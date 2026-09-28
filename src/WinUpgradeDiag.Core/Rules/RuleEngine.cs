@@ -540,7 +540,6 @@ namespace WinUpgradeDiag.Core.Rules
             DiagnosticContext context, IProgress<string> progress, CancellationToken cancellationToken)
         {
             var findings = new List<Finding>();
-            var patterns = ErrorSignatureCatalog.All.Select(s => s.Pattern).Distinct().ToList();
 
             var targets = context.Manifest
                 .Where(m => m.Exists && m.Readable)
@@ -561,8 +560,19 @@ namespace WinUpgradeDiag.Core.Rules
                 MultiSearchResult result;
                 try
                 {
+                    var relevant = ErrorSignatureCatalog.All
+                        .Where(sig => sig.Covers(target.Source.Category))
+                        .Select(sig => sig.Pattern)
+                        .Distinct()
+                        .ToList();
+
+                    if (relevant.Count == 0)
+                    {
+                        continue;
+                    }
+
                     result = _searcher.SearchMany(
-                        target.ResolvedPath, patterns, maxMatchesPerQuery: 20, contextLines: 1,
+                        target.ResolvedPath, relevant, maxMatchesPerQuery: 20, contextLines: 1,
                         progress: null, cancellationToken: cancellationToken);
                 }
                 catch (Exception)
@@ -573,6 +583,12 @@ namespace WinUpgradeDiag.Core.Rules
 
                 foreach (var signature in ErrorSignatureCatalog.All)
                 {
+                    // Only apply a signature to a log where its meaning actually holds.
+                    if (!signature.Covers(target.Source.Category))
+                    {
+                        continue;
+                    }
+
                     var hits = result.For(signature.Pattern);
                     if (hits == null || hits.Matches.Count == 0)
                     {

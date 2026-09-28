@@ -19,4 +19,26 @@
     <ProjectReference Include="..\WinUpgradeDiag.Core\WinUpgradeDiag.Core.csproj" />
   </ItemGroup>
 
+  <!--
+    Ship one file.
+
+    The tool is copied by hand onto a machine that is already broken, often over a remote session.
+    "Copy these two files and keep them together" is a step that goes wrong, and a missing
+    side-by-side DLL fails at launch with a message that explains nothing. Embedding the
+    dependency also halves the code-signing and allow-listing work: one file, one hash.
+
+    EmbeddedAssemblyLoader resolves these at run time.
+  -->
+  <Target Name="EmbedDependencies" AfterTargets="ResolveReferences" BeforeTargets="PrepareResources">
+    <ItemGroup>
+      <EmbeddedResource Include="@(ReferencePath)" Condition="'%(ReferencePath.Filename)' == 'WinUpgradeDiag.Core'">
+        <LogicalName>WinUpgradeDiag.App.Dependencies.%(ReferencePath.Filename).dll</LogicalName>
+      </EmbeddedResource>
+    </ItemGroup>
+    <Message Importance="high" Text="Embedding dependency: %(EmbeddedResource.LogicalName)"
+             Condition="$([System.String]::Copy('%(EmbeddedResource.LogicalName)').StartsWith('WinUpgradeDiag.App.Dependencies'))" />
+    <ItemGroup>
+    </ItemGroup>
+  </Target>
+
 </Project>
