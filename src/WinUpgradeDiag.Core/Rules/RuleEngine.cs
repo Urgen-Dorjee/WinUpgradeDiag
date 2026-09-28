@@ -689,7 +689,7 @@ namespace WinUpgradeDiag.Core.Rules
                         VerdictKind.CauseIdentified,
                         setupState.Title,
                         setupState.Meaning,
-                        findings, gaps);
+                        findings, gaps, setupState);
                 }
 
                 return new Verdict(
@@ -701,7 +701,7 @@ namespace WinUpgradeDiag.Core.Rules
                         ? setupState.Meaning
                         : "Setup or the task sequence engine is still running. A Setup phase can sit near the end for " +
                           "a long time and still be working. Clearing the task sequence now would break a healthy upgrade.",
-                    findings, gaps);
+                    findings, gaps, setupState ?? live);
             }
 
             var critical = findings.Where(f => f.Severity == Severity.Critical).ToList();
@@ -713,7 +713,7 @@ namespace WinUpgradeDiag.Core.Rules
                     VerdictKind.CauseIdentified,
                     topCritical.Title,
                     topCritical.Meaning,
-                    findings, gaps);
+                    findings, gaps, topCritical);
             }
 
             if (critical.Count > 0)
@@ -723,7 +723,7 @@ namespace WinUpgradeDiag.Core.Rules
                     "Problems were found, but the evidence does not name a single cause.",
                     "The findings below are real but each is only suggestive. Work down them in order, and widen the " +
                     "search in the Logs tab around the times they mention.",
-                    findings, gaps);
+                    findings, gaps, critical[0]);
             }
 
             // Nothing critical. Decide between "this machine is fine" and "we could not see enough".

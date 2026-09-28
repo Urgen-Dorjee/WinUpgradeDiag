@@ -187,7 +187,7 @@
                                                 Visibility="{Binding HasRecommendedAction, Converter={StaticResource BoolToVisibility}}">
                                             <StackPanel>
                                                 <TextBlock Style="{StaticResource ChipText}" Foreground="{StaticResource Ink500}"
-                                                           Text="RECOMMENDED ACTION" />
+                                                           Text="{Binding RecommendedActionLabel}" />
                                                 <TextBlock Style="{StaticResource BodyText}" Margin="0,6,0,0"
                                                            Foreground="{StaticResource Ink900}"
                                                            Text="{Binding RecommendedAction, Mode=OneWay}" />

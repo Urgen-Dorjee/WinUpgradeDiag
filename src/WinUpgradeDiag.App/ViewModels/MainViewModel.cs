@@ -52,6 +52,7 @@ namespace WinUpgradeDiag.App.ViewModels
         private bool _exportJson = true;
         private bool _exportZip;
         private bool _redact = true;
+        private string _recommendedActionLabel = "RECOMMENDED ACTION";
         private string _exportStatus = "";
         private string _lastExportDirectory;
         private bool _isExporting;
@@ -249,6 +250,16 @@ namespace WinUpgradeDiag.App.ViewModels
             private set => Set(ref _recommendedCommand, value);
         }
 
+        /// <summary>
+        /// Heading above the advice. "RECOMMENDED ACTION" is wrong over "there is nothing to do",
+        /// and "DO NOTHING YET" is the whole point when an upgrade is still running.
+        /// </summary>
+        public string RecommendedActionLabel
+        {
+            get => _recommendedActionLabel;
+            private set => Set(ref _recommendedActionLabel, value);
+        }
+
         public bool HasRecommendedAction => !string.IsNullOrWhiteSpace(RecommendedAction);
         public bool HasRecommendedCommand => !string.IsNullOrWhiteSpace(RecommendedCommand);
         public bool HasGaps => Gaps.Count > 0;
@@ -271,9 +282,14 @@ namespace WinUpgradeDiag.App.ViewModels
                 VerdictSeverity = verdict.DisplaySeverity.ToString();
                 VerdictKindText = Humanise(verdict.Kind);
 
-                var top = verdict.TopFinding;
-                RecommendedAction = top?.Action ?? "";
-                RecommendedCommand = top?.Command ?? "";
+                // The advice comes from the verdict, not from whichever finding sorted first. On a
+                // machine with no failed upgrade the leading finding was a pending reboot, and the
+                // Summary tab told the technician to reboot and retry an upgrade that had already
+                // succeeded.
+                var advice = verdict.Action;
+                RecommendedActionLabel = advice?.Label ?? "RECOMMENDED ACTION";
+                RecommendedAction = advice?.Text ?? "";
+                RecommendedCommand = advice?.Command ?? "";
 
                 // Only the leading finding starts open; the rest stay collapsed so the answer is
                 // visible without scrolling (DESIGN.md §5).
@@ -303,6 +319,7 @@ namespace WinUpgradeDiag.App.ViewModels
         /// </summary>
         private void DescribeMissingVerdict()
         {
+            RecommendedActionLabel = "RECOMMENDED ACTION";
             RecommendedAction = "";
             RecommendedCommand = "";
 

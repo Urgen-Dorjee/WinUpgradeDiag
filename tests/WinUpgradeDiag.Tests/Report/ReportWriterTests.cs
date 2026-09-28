@@ -137,14 +137,187 @@ namespace WinUpgradeDiag.Tests.Report
                 Assert.Contains("Cause identified", html);
                 Assert.Contains("Not running as administrator", html);
 
-                // ...and the verdict must come before the log manifest, not after it.
+                // ...and the verdict must come before the manifest, not after it.
                 Assert.True(html.IndexOf("A task sequence is stuck", StringComparison.Ordinal)
-                          < html.IndexOf("Log manifest", StringComparison.Ordinal),
+                          < html.IndexOf("What was examined", StringComparison.Ordinal),
                     "the verdict must appear above the manifest");
 
                 // Redaction still applies to everything the verdict carries.
                 Assert.DoesNotContain("jdoe", html, StringComparison.OrdinalIgnoreCase);
             }
+        }
+
+        /// <summary>
+        /// The bug this covers: on a machine already running Windows 11 the highest-ranked finding
+        /// was a pending reboot, so the report printed "Restart the machine before attempting the
+        /// upgrade again" directly underneath "No failed upgrade found". The advice has to follow
+        /// the conclusion, not whichever finding happened to sort first.
+        /// </summary>
+        [Fact]
+        public void A_clean_machine_is_not_told_to_retry_an_upgrade_that_never_failed()
+        {
+            var reboot = new Finding("PR-001", "This machine is waiting for a restart",
+                Severity.Warning, Confidence.High,
+                "A pending restart blocks servicing operations.",
+                "Restart the machine before attempting the upgrade again.",
+                new Evidence[0]);
+
+            var verdict = new Verdict(
+                VerdictKind.NoFailureFound,
+                "No failed upgrade found - this machine is already running Windows 11 Pro.",
+                "There is no rollback folder and no Setup failure in the logs that were read.",
+                new[] { reboot },
+                new string[0]);
+
+            Assert.Equal("NOTHING TO DO", verdict.Action.Label);
+            Assert.DoesNotContain("attempting the upgrade again", verdict.Action.Text, StringComparison.Ordinal);
+            Assert.False(verdict.Action.HasCommand);
+
+            // The findings are still listed - they are just not presented as causes.
+            Assert.Equal("Observations", verdict.FindingsHeading);
+            Assert.Contains("None of them caused a failure", verdict.FindingsPreamble, StringComparison.Ordinal);
+
+            using (var tmp = new TempDirectory())
+            {
+                string log, dump;
+                var context = ContextWith(tmp, out log, out dump);
+                context.Verdict = verdict;
+                var html = HtmlReportWriter.Render(context, TestRedactor);
+
+                Assert.Contains("NOTHING TO DO", html, StringComparison.Ordinal);
+                Assert.DoesNotContain("RECOMMENDED ACTION", html, StringComparison.Ordinal);
+                // The finding keeps its own advice; only the verdict-level instruction changed.
+                Assert.Contains("This machine is waiting for a restart", html, StringComparison.Ordinal);
+            }
+        }
+
+        /// <summary>
+        /// Ranking deliberately floats a live upgrade to the top of the list. Taking the action from
+        /// findings[0] regardless meant a verdict built from the Setup-progress rule underneath it
+        /// printed the wrong instruction.
+        /// </summary>
+        [Fact]
+        public void The_action_comes_from_the_finding_the_verdict_was_built_from()
+        {
+            var live = new Finding("TS-002", "An upgrade is running", Severity.Info, Confidence.High,
+                "Setup is active.", "Leave it alone.", new Evidence[0]);
+            var blocked = new Finding("SU-002", "Setup is blocked at 99%", Severity.Critical, Confidence.High,
+                "Progress has not moved for over an hour.", "Collect the Panther logs and escalate.",
+                new Evidence[0]);
+
+            var verdict = new Verdict(
+                VerdictKind.CauseIdentified, blocked.Title, blocked.Meaning,
+                new[] { live, blocked }, new string[0], cause: blocked);
+
+            Assert.Same(live, verdict.TopFinding);
+            Assert.Equal("RECOMMENDED ACTION", verdict.Action.Label);
+            Assert.Equal("Collect the Panther logs and escalate.", verdict.Action.Text);
+        }
+
+        /// <summary>
+        /// An in-progress upgrade is the one state where a finding's advice could do real damage if
+        /// it were promoted to the verdict's instruction, so that text is never taken from a finding.
+        /// </summary>
+        [Fact]
+        public void A_running_upgrade_is_always_told_to_wait()
+        {
+            var destructive = new Finding("TS-001", "Stale task sequence", Severity.Critical, Confidence.High,
+                "A lock survived.", "Delete the task sequence state and reboot.", new Evidence[0]);
+
+            var verdict = new Verdict(
+                VerdictKind.InProgress, "An upgrade is in progress - leave it alone.",
+                "Setup is still running.", new[] { destructive }, new string[0]);
+
+            Assert.Equal("DO NOTHING YET", verdict.Action.Label);
+            Assert.DoesNotContain("Delete", verdict.Action.Text, StringComparison.Ordinal);
+            Assert.Contains("Leave the machine alone", verdict.Action.Text, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void The_event_table_collapses_repeats_and_folds_away_the_routine_ones()
+        {
+            using (var tmp = new TempDirectory())
+            {
+                string log, dump;
+                var context = ContextWith(tmp, out log, out dump);
+                context.SystemState.Events = new List<EventRecordInfo>
+                {
+                    new EventRecordInfo { LogName = "System", ProviderName = "disk", EventId = 7,
+                        Level = "Error", TimeCreatedUtc = new DateTime(2026, 9, 18, 9, 0, 0, DateTimeKind.Utc),
+                        Message = "The device has a bad block." },
+                    new EventRecordInfo { LogName = "System", ProviderName = "disk", EventId = 7,
+                        Level = "Error", TimeCreatedUtc = new DateTime(2026, 9, 18, 8, 0, 0, DateTimeKind.Utc),
+                        Message = "The device has a bad block." },
+                    new EventRecordInfo { LogName = "Application", ProviderName = "Telemetry", EventId = 1001,
+                        Level = "Information", TimeCreatedUtc = new DateTime(2026, 9, 18, 7, 0, 0, DateTimeKind.Utc),
+                        Message = "Fault bucket 2111525315961788241" }
+                };
+
+                var html = HtmlReportWriter.Render(context, TestRedactor);
+
+                // Two identical errors render as one row carrying a count.
+                Assert.Contains("&times;2", html, StringComparison.Ordinal);
+                // The error is surfaced; the routine event is only inside the fold.
+                var fold = html.IndexOf("<details>", StringComparison.Ordinal);
+                Assert.True(fold > 0, "the full event list should be folded away");
+                Assert.True(html.IndexOf("bad block", StringComparison.Ordinal) < fold,
+                    "errors belong above the fold");
+                Assert.True(html.IndexOf("Fault bucket", StringComparison.Ordinal) > fold,
+                    "routine events belong inside the fold");
+            }
+        }
+
+        [Theory]
+        [InlineData("0.1.0+e33d6cf4501e440faeef1a5cf9d59e28bd2f8aeb", "0.1.0 (e33d6cf)")]
+        [InlineData("0.1.0-test", "0.1.0-test")]
+        [InlineData("", "")]
+        public void The_header_shows_a_short_build_id_not_a_full_hash(string version, string expected)
+        {
+            Assert.Equal(expected, HtmlReportWriter.ShortVersion(version));
+        }
+
+        [Fact]
+        public void Filter_drivers_are_named_readably_and_third_party_ones_are_identified()
+        {
+            var inbox = new FilterDriverInfo
+            {
+                ServiceName = "AppvStrm",
+                DisplayName = @"@%systemroot%\system32\drivers\AppvStrm.sys,-101",
+                ImagePath = @"\SystemRoot\system32\drivers\AppvStrm.sys"
+            };
+            var oem = new FilterDriverInfo
+            {
+                ServiceName = "iaStorAfs",
+                DisplayName = "@oem42.inf,%iaStorAfs.ServiceName%;iaStorAfs",
+                ImagePath = @"System32\drivers\iaStorAfs.sys"
+            };
+            var agent = new FilterDriverInfo
+            {
+                ServiceName = "VendorFlt",
+                DisplayName = "Vendor Endpoint Filter",
+                ImagePath = @"C:\Program Files\Vendor\VendorFlt.sys"
+            };
+
+            // An unexpanded MUI reference is not a name; fall back to the service name.
+            Assert.Equal("AppvStrm", HtmlReportWriter.DriverName(inbox));
+            Assert.Equal("Vendor Endpoint Filter", HtmlReportWriter.DriverName(agent));
+
+            Assert.False(HtmlReportWriter.IsThirdParty(inbox));
+            Assert.True(HtmlReportWriter.IsThirdParty(oem));
+            Assert.True(HtmlReportWriter.IsThirdParty(agent));
+        }
+
+        [Fact]
+        public void An_old_setup_log_is_flagged_as_old()
+        {
+            var run = new DateTime(2026, 9, 28, 12, 0, 0, DateTimeKind.Utc);
+
+            Assert.Contains("today", HtmlReportWriter.Staleness(run.AddHours(-3), run), StringComparison.Ordinal);
+            Assert.Contains("5 days ago", HtmlReportWriter.Staleness(run.AddDays(-5), run), StringComparison.Ordinal);
+
+            var stale = HtmlReportWriter.Staleness(new DateTime(2024, 12, 15, 0, 0, 0, DateTimeKind.Utc), run);
+            Assert.Contains("21 months ago", stale, StringComparison.Ordinal);
+            Assert.Contains("check this is the attempt you are investigating", stale, StringComparison.Ordinal);
         }
 
         [Fact]
