@@ -1,0 +1,124 @@
+<Window x:Class="WinUpgradeDiag.App.ActionDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ctl="clr-namespace:WinUpgradeDiag.App.Controls"
+        Title="WinUpgradeDiag"
+        SizeToContent="Height" Width="660" MaxHeight="820"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize" ShowInTaskbar="False"
+        Background="{StaticResource Surface}"
+        FontFamily="Segoe UI" FontSize="13"
+        TextOptions.TextFormattingMode="Display">
+
+    <DockPanel>
+        <!-- Severity accent. One thin band carries the whole "how serious is this" signal,
+             which a stock message box conveys only through a small icon. -->
+        <Border x:Name="AccentBar" DockPanel.Dock="Top" Height="4" />
+
+        <!-- Footer sits on its own surface so the actions read as a distinct region. -->
+        <Border DockPanel.Dock="Bottom" Background="{StaticResource SurfaceMuted}"
+                BorderBrush="{StaticResource Line200}" BorderThickness="0,1,0,0" Padding="20,14">
+            <DockPanel>
+                <TextBlock x:Name="FooterNote" DockPanel.Dock="Left" Style="{StaticResource CaptionText}"
+                           VerticalAlignment="Center" MaxWidth="330" Visibility="Collapsed" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button x:Name="CancelButton" Content="Cancel" IsCancel="True" Click="Cancel_Click"
+                            Style="{StaticResource SecondaryButton}" MinWidth="104" />
+                    <Button x:Name="PrimaryButton" Content="OK" Click="Primary_Click" IsDefault="True"
+                            Style="{StaticResource ButtonBase}" MinWidth="132" Margin="10,0,0,0"
+                            Foreground="White" BorderThickness="0" FontWeight="SemiBold" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0">
+            <StackPanel Margin="20,18,20,18">
+
+                <!-- Heading: glyph + title, so the severity is legible before any reading. -->
+                <DockPanel>
+                    <Border x:Name="GlyphChip" DockPanel.Dock="Left" Width="38" Height="38"
+                            CornerRadius="19" Margin="0,0,14,0" VerticalAlignment="Top">
+                        <TextBlock x:Name="GlyphText" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                   FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <StackPanel VerticalAlignment="Center">
+                        <Border x:Name="KindChip" Style="{StaticResource Chip}" HorizontalAlignment="Left"
+                                Margin="0,0,0,6" Visibility="Collapsed">
+                            <TextBlock x:Name="KindText" Style="{StaticResource ChipText}" />
+                        </Border>
+                        <TextBlock x:Name="TitleText" Style="{StaticResource DisplayText}" FontSize="17" />
+                    </StackPanel>
+                </DockPanel>
+
+                <TextBlock x:Name="BodyText" Style="{StaticResource BodyText}" Margin="52,12,0,0"
+                           Visibility="Collapsed" />
+
+                <!-- Structured sections. A message box can only offer one undifferentiated blob;
+                     "what it does" and "when not to" are different questions. -->
+                <StackPanel x:Name="StepsPanel" Margin="52,16,0,0" Visibility="Collapsed">
+                    <TextBlock x:Name="StepsHeading" Style="{StaticResource ChipText}"
+                               Foreground="{StaticResource Ink500}" Text="IT WILL" />
+                    <ItemsControl x:Name="StepsList" Margin="0,6,0,0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,3">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="16" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="&#8226;" Foreground="{StaticResource Ink300}" />
+                                    <TextBlock Grid.Column="1" Style="{StaticResource BodyText}" FontSize="12.5"
+                                               Text="{Binding Mode=OneWay}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <Border x:Name="ConditionsPanel" Margin="52,16,0,0" Padding="13" CornerRadius="5"
+                        Background="{StaticResource WarningBg}" BorderBrush="{StaticResource WarningLine}"
+                        BorderThickness="1" Visibility="Collapsed">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource ChipText}" Foreground="{StaticResource WarningFg}"
+                                   Text="ONLY RUN THIS IF" />
+                        <ItemsControl x:Name="ConditionsList" Margin="0,6,0,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,3">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="16" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="&#8226;" Foreground="{StaticResource WarningFg}" />
+                                        <TextBlock Grid.Column="1" Style="{StaticResource BodyText}" FontSize="12.5"
+                                                   Foreground="{StaticResource Ink700}" Text="{Binding Mode=OneWay}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <!-- The command that will actually be executed, verbatim. -->
+                <Border x:Name="CommandPanel" Margin="52,16,0,0" Padding="11,9" CornerRadius="5"
+                        Background="{StaticResource Ink900}" Visibility="Collapsed">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource ChipText}" Foreground="#FF8FA3B8" Text="COMMAND" />
+                        <TextBlock x:Name="CommandText" Style="{StaticResource MonoText}" Margin="0,5,0,0"
+                                   Foreground="#FFE6EDF3" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Typed confirmation, for anything that cannot be undone. -->
+                <StackPanel x:Name="ConfirmPanel" Margin="52,18,0,0" Visibility="Collapsed">
+                    <TextBlock x:Name="ConfirmPrompt" Style="{StaticResource BodyText}"
+                               Foreground="{StaticResource Ink900}" />
+                    <TextBox x:Name="ConfirmInput" Margin="0,8,0,0"
+                             FontFamily="{StaticResource MonoFont}"
+                             TextChanged="ConfirmInput_TextChanged" />
+                    <TextBlock x:Name="MatchText" Style="{StaticResource CaptionText}" Margin="0,6,0,0" />
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

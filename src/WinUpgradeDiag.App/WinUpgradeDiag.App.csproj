@@ -6,7 +6,14 @@
     <RootNamespace>WinUpgradeDiag.App</RootNamespace>
     <AssemblyName>WinUpgradeDiag</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- ApplicationIcon stamps the exe. The Window.Icon binding needs the same file embedded as a
+         WPF resource as well, or constructing the window throws at startup. -->
+    <Resource Include="app.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\WinUpgradeDiag.Core\WinUpgradeDiag.Core.csproj" />

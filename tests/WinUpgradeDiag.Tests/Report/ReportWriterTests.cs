@@ -148,6 +148,36 @@ namespace WinUpgradeDiag.Tests.Report
         }
 
         [Fact]
+        public void The_report_prescribes_the_recovery_script_with_its_parameters_resolved()
+        {
+            using (var tmp = new TempDirectory())
+            {
+                string log, dump;
+                var context = ContextWith(tmp, out log, out dump);
+                context.SystemState.TaskSequenceExecutionRequest =
+                    WinUpgradeDiag.Core.Collect.OrphanedTaskSequenceInfo.Found("ABC00123", "ABC20001");
+                context.SystemState.UpgradeFolders = new List<WinUpgradeDiag.Core.Collect.UpgradeFolderInfo>
+                {
+                    new WinUpgradeDiag.Core.Collect.UpgradeFolderInfo { Path = @"C:\$WINDOWS.~BT", Exists = true }
+                };
+                context.SystemState.IsElevated = true;
+                context.SystemState.PendingReboot = new WinUpgradeDiag.Core.Collect.PendingRebootState();
+                context.SystemState.SystemDriveFreeBytes = 200L * 1024 * 1024 * 1024;
+                context.Verdict = new RuleEngine().Evaluate(context);
+
+                var html = HtmlReportWriter.Render(context, TestRedactor);
+
+                Assert.Contains("PRESCRIBED FIX", html);
+                Assert.Contains("Fix-B-SetupInterrupted.ps1", html);
+                Assert.Contains("IT WILL", html);
+                Assert.Contains("ONLY IF", html);
+                // The ticket reader must see the guard rail, not just the command.
+                Assert.Contains("TSManager", html);
+                Assert.Contains("does not run fixes", html);
+            }
+        }
+
+        [Fact]
         public void The_json_export_carries_the_verdict_and_findings_for_fleet_aggregation()
         {
             using (var tmp = new TempDirectory())

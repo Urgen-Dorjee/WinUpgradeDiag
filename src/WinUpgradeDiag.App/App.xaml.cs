@@ -14,9 +14,20 @@ namespace WinUpgradeDiag.App
         private static void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
         {
             // Degrade, never crash: a technician on a broken machine needs the window to stay up.
-            MessageBox.Show(
-                "An unexpected error occurred. The tool will keep running.\n\n" + e.Exception.Message,
-                "WinUpgradeDiag", MessageBoxButton.OK, MessageBoxImage.Warning);
+            try
+            {
+                ActionDialog.Show(
+                    Current?.MainWindow,
+                    DialogKind.Warning,
+                    "Something went wrong, but the tool is still running",
+                    e.Exception.Message,
+                    "Nothing on this machine was changed by this error.");
+            }
+            catch (System.Exception)
+            {
+                // If even the dialog cannot be shown, staying alive still beats terminating.
+            }
+
             e.Handled = true;
         }
     }

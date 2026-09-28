@@ -49,6 +49,19 @@ namespace WinUpgradeDiag.Core.Collect
                 }
             });
 
+            Step(state, progress, cancellationToken, "Reading ConfigMgr client cache (WMI)", () =>
+            {
+                state.CcmCache = new CcmWmiCollector().GetCacheSnapshot();
+                if (state.CcmCache.Error != null && state.CcmCache.Elements.Count == 0)
+                {
+                    // "No client here" is normal and not worth reporting as a gap; a real failure is.
+                    if (state.CcmCache.Error.IndexOf("No ConfigMgr client", StringComparison.OrdinalIgnoreCase) < 0)
+                    {
+                        state.CollectionErrors.Add("Client cache: " + state.CcmCache.Error);
+                    }
+                }
+            });
+
             Step(state, progress, cancellationToken, "Reading storage health (WMI)", () =>
             {
                 state.StorageHealth = new StorageHealthCollector().Collect();

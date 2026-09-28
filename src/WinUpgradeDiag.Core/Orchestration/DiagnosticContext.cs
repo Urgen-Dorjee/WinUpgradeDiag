@@ -29,5 +29,19 @@ namespace WinUpgradeDiag.Core.Orchestration
         public Verdict Verdict { get; set; }
 
         public bool Cancelled { get; set; }
+
+        /// <summary>Why collection stopped early, or null. Whatever was gathered is still present.</summary>
+        public string CollectionFailure { get; set; }
+
+        /// <summary>
+        /// Why the rules stage produced no verdict, or null. Separate from
+        /// <see cref="CollectionFailure"/> because a rules failure still leaves a complete
+        /// manifest and system state worth reading.
+        /// </summary>
+        public string VerdictFailure { get; set; }
+
+        /// <summary>True when something was gathered, even if the run did not finish cleanly.</summary>
+        public bool HasPartialResults =>
+            SystemState != null || (Manifest != null && Manifest.Count > 0);
     }
 }

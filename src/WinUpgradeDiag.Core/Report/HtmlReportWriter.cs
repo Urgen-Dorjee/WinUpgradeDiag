@@ -185,7 +185,11 @@ namespace WinUpgradeDiag.Core.Report
             ".verdict.sev-info{background:#edf4fb;border-color:#b9d3ee;color:#1b4f7a}" +
             ".evidence{background:#f7f8fa;border:1px solid #e3e7ec;border-radius:4px;padding:10px 12px;margin-top:12px}" +
             ".esrc{font-size:11px;color:#666;margin-top:8px}" +
-            "pre.eline{font-family:Consolas,monospace;font-size:12px;background:#fff;border:1px solid #e3e7ec;border-radius:3px;padding:7px 9px;margin:3px 0 0;overflow-x:auto;white-space:pre-wrap;word-break:break-all}";
+            "pre.eline{font-family:Consolas,monospace;font-size:12px;background:#fff;border:1px solid #e3e7ec;border-radius:3px;padding:7px 9px;margin:3px 0 0;overflow-x:auto;white-space:pre-wrap;word-break:break-all}" +
+            ".fix{background:#f7f8fa;border:1px solid #e3e7ec;border-radius:4px;padding:10px 13px;margin-top:12px}" +
+            ".fix ul{margin:4px 0 10px;padding-left:20px;font-size:12px;color:#3b444f}" +
+            ".fix li{margin:2px 0}.fix code{font-family:Consolas,monospace;font-size:12px;color:#1f4b78}" +
+            ".fix .label{margin-top:8px}.blocked{color:#8a5200;font-size:12px}";
 
         /// <summary>
         /// The verdict, the recommended action and the ranked findings — written first, because a
@@ -257,6 +261,45 @@ namespace WinUpgradeDiag.Core.Report
                 if (finding.HasCommand)
                 {
                     sb.Append("<pre class=\"cmd\">").Append(E(r(finding.Command))).AppendLine("</pre>");
+                }
+
+                if (finding.HasRemediation)
+                {
+                    var fix = finding.Remediation;
+                    sb.Append("<div class=\"fix\"><div class=\"label\">PRESCRIBED FIX &middot; ")
+                      .Append(E(fix.RiskText)).AppendLine("</div>");
+                    sb.Append("<p><strong>").Append(E(fix.Title)).Append("</strong><br><code>")
+                      .Append(E(fix.ScriptName)).AppendLine("</code></p>");
+                    sb.Append("<p>").Append(E(r(fix.Summary))).AppendLine("</p>");
+
+                    sb.AppendLine("<div class=\"label\">IT WILL</div><ul>");
+                    foreach (var step in fix.Steps)
+                    {
+                        sb.Append("<li>").Append(E(r(step))).AppendLine("</li>");
+                    }
+                    sb.AppendLine("</ul>");
+
+                    if (fix.Preconditions.Count > 0)
+                    {
+                        sb.AppendLine("<div class=\"label\">ONLY IF</div><ul>");
+                        foreach (var condition in fix.Preconditions)
+                        {
+                            sb.Append("<li>").Append(E(r(condition))).AppendLine("</li>");
+                        }
+                        sb.AppendLine("</ul>");
+                    }
+
+                    if (fix.IsReady)
+                    {
+                        sb.Append("<pre class=\"cmd\">").Append(E(r(fix.CommandLine))).AppendLine("</pre>");
+                    }
+                    else if (!string.IsNullOrWhiteSpace(fix.BlockedReason))
+                    {
+                        sb.Append("<p class=\"blocked\">").Append(E(r(fix.BlockedReason))).AppendLine("</p>");
+                    }
+
+                    sb.AppendLine("<p class=\"meta\">This tool does not run fixes. Confirm the conditions above " +
+                                  "still hold, then run the script from an elevated PowerShell.</p></div>");
                 }
 
                 if (finding.HasEvidence)

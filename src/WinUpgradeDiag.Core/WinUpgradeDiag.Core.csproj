@@ -7,7 +7,20 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!--
+      The recovery scripts ship inside the assembly rather than beside it.
+
+      A folder of loose .ps1 files that an elevated process executes is a writable execution path
+      on a managed endpoint: anyone who can drop a file there chooses what runs as administrator.
+      Embedded, the scripts are covered by whatever signature the .exe itself carries, so signing
+      one binary protects all of them, and tampering means tampering with the signed assembly.
+    -->
+    <EmbeddedResource Include="Scripts\*.ps1" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Reference Include="System.Management" />
+    <Reference Include="System.ServiceProcess" />
     <Reference Include="System.Web.Extensions" />
     <Reference Include="System.IO.Compression" />
     <Reference Include="System.IO.Compression.FileSystem" />

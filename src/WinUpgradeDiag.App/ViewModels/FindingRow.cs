@@ -29,6 +29,20 @@ namespace WinUpgradeDiag.App.ViewModels
         public string Severity => Finding.Severity.ToString();
         public string Confidence => Finding.ConfidenceText;
         public IReadOnlyList<EvidenceRow> EvidenceLines { get; }
+
+        // ---- the prescribed recovery script, with parameters already resolved ----
+        public bool HasRemediation => Finding.HasRemediation;
+        public string FixScript => Finding.Remediation?.ScriptName;
+        public string FixTitle => Finding.Remediation?.Title;
+        public string FixSummary => Finding.Remediation?.Summary;
+        public string FixRisk => Finding.Remediation?.RiskText;
+        public string FixRiskSeverity => Finding.Remediation?.RiskSeverity ?? "Info";
+        public IReadOnlyList<string> FixSteps => Finding.Remediation?.Steps ?? new List<string>();
+        public IReadOnlyList<string> FixPreconditions => Finding.Remediation?.Preconditions ?? new List<string>();
+        public string FixCommand => Finding.Remediation?.CommandLine;
+        public bool FixIsReady => Finding.Remediation?.IsReady == true;
+        public string FixBlockedReason => Finding.Remediation?.BlockedReason;
+        public bool FixIsBlocked => HasRemediation && !FixIsReady;
         public bool HasEvidence => EvidenceLines.Count > 0;
 
         /// <summary>Findings start expanded only when they are the thing to act on.</summary>

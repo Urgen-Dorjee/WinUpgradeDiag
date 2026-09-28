@@ -85,6 +85,22 @@ file size. In the WPF app the same thing is the **Search whole file** button on 
 3. CLI head and ConfigMgr integration, JSON aggregation
 4. Remediation actions
 
+## Recovery tools
+
+The recovery scripts are **embedded in the executable**, not loaded from a folder beside it. A
+directory of loose `.ps1` files that an elevated process executes is a writable execution path:
+whoever can drop a file there decides what runs as administrator. Embedded, the scripts are covered
+by whatever signature the `.exe` carries, so code-signing one binary protects all of them, and
+tampering means tampering with the signed assembly.
+
+Each run records the SHA-256 of the exact bytes that executed in an audit log beside the diagnostic
+output, along with the operator, elevation state and the preconditions observed at launch time.
+
+Before running anything, **Preview** reports what the tool would touch on this machine — whether the
+orphaned execution request actually exists, whether the folder it would delete is present and how
+large, whether the content id matches anything cached. Most of these scripts have no `-WhatIf`, so a
+simulated dry run would be fiction; inspecting live state is checkable.
+
 ## Disclaimer
 
 Provided as-is. Not affiliated with or endorsed by Microsoft. Not a substitute for vendor

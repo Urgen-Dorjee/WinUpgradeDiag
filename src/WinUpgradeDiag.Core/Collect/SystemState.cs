@@ -25,6 +25,9 @@ namespace WinUpgradeDiag.Core.Collect
 
         public ProcessSnapshot Processes { get; set; }
         public OrphanedTaskSequenceInfo TaskSequenceExecutionRequest { get; set; }
+
+        /// <summary>ConfigMgr client cache contents, or the reason they could not be read.</summary>
+        public CcmCacheSnapshot CcmCache { get; set; }
         public IReadOnlyList<StorageHealthInfo> StorageHealth { get; set; }
         public IReadOnlyList<FilterDriverInfo> FilterDrivers { get; set; }
         public IReadOnlyList<EventRecordInfo> Events { get; set; }

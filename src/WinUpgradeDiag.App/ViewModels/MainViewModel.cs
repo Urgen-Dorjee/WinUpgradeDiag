@@ -67,6 +67,13 @@ namespace WinUpgradeDiag.App.ViewModels
                 () => !_isSearching && _selectedManifestRow != null && !string.IsNullOrWhiteSpace(_viewerFilter));
             CancelSearchCommand = new RelayCommand(() => _searchCts?.Cancel(), () => _isSearching);
             CopyCommandCommand = new RelayCommand(CopyCommand, () => HasRecommendedCommand);
+
+            // The toolbox is available from the moment the app opens: a technician standing at a
+            // broken machine should not have to run a diagnostic first to reach the fix scripts.
+            Tools = new ToolsViewModel(() => _lastExportDirectory ?? ReportExporter.DefaultOutputRoot);
+
+            AboutCommand = new RelayCommand(ShowAbout);
+            ExitCommand = new RelayCommand(() => System.Windows.Application.Current?.Shutdown());
         }
 
         public RelayCommand RunCommand { get; }
@@ -76,6 +83,11 @@ namespace WinUpgradeDiag.App.ViewModels
         public RelayCommand SearchWholeFileCommand { get; }
         public RelayCommand CancelSearchCommand { get; }
         public RelayCommand CopyCommandCommand { get; }
+        public RelayCommand AboutCommand { get; }
+        public RelayCommand ExitCommand { get; }
+
+        /// <summary>The recovery-script toolbox.</summary>
+        public ToolsViewModel Tools { get; }
 
         /// <summary>Short form for the header: "v0.1.0 (f34aaba)".</summary>
         public string ToolVersion => "v" + DiagnosticRunner.DisplayVersion;
@@ -131,8 +143,14 @@ namespace WinUpgradeDiag.App.ViewModels
             }
             catch (Exception ex)
             {
-                // Degrade, never crash: show what we have and say what failed.
-                _context = new DiagnosticContext { StartedAtUtc = DateTime.UtcNow, FinishedAtUtc = DateTime.UtcNow };
+                // Degrade, never crash. Keep any context the runner managed to return: replacing it
+                // with an empty one throws away the manifest and system state that were collected
+                // before the failure, which is exactly the evidence the technician still needs.
+                if (_context == null)
+                {
+                    _context = new DiagnosticContext { StartedAtUtc = DateTime.UtcNow, FinishedAtUtc = DateTime.UtcNow };
+                }
+                _context.VerdictFailure = _context.VerdictFailure ?? (ex.GetType().Name + ": " + ex.Message);
                 CurrentStep = "Run failed: " + ex.Message;
             }
             finally
@@ -145,6 +163,7 @@ namespace WinUpgradeDiag.App.ViewModels
             }
 
             PopulateResults();
+            LastRunText = "Last run " + DateTime.Now.ToString("HH:mm:ss", CultureInfo.CurrentCulture);
             State = RunState.Results;
         }
 
@@ -236,12 +255,7 @@ namespace WinUpgradeDiag.App.ViewModels
             var verdict = _context?.Verdict;
             if (verdict == null)
             {
-                VerdictHeadline = "The diagnostic did not complete.";
-                VerdictDetail = "No verdict was produced. Check the Logs and System tabs for what was collected.";
-                VerdictSeverity = "Warning";
-                VerdictKindText = "Incomplete";
-                RecommendedAction = "";
-                RecommendedCommand = "";
+                DescribeMissingVerdict();
             }
             else
             {
@@ -275,6 +289,64 @@ namespace WinUpgradeDiag.App.ViewModels
             OnPropertyChanged(nameof(HasFindings));
         }
 
+        /// <summary>
+        /// Says why there is no verdict, and what survived anyway. "Did not complete" on its own
+        /// tells a technician nothing and hides the fact that the collected evidence is still
+        /// sitting in the other tabs.
+        /// </summary>
+        private void DescribeMissingVerdict()
+        {
+            RecommendedAction = "";
+            RecommendedCommand = "";
+
+            var collected = new List<string>();
+            if (_context?.Manifest != null && _context.Manifest.Count > 0)
+            {
+                collected.Add(_context.Manifest.Count(m => m.Exists) + " log file(s) in the Logs tab");
+            }
+            if (_context?.SystemState != null)
+            {
+                collected.Add("machine state in the System tab");
+            }
+
+            var survived = collected.Count > 0
+                ? " What was collected is still available: " + string.Join(" and ", collected) + "."
+                : " Nothing was collected.";
+
+            if (_context != null && _context.Cancelled)
+            {
+                VerdictKindText = "Cancelled";
+                VerdictSeverity = "Warning";
+                VerdictHeadline = "The diagnostic was cancelled before it reached a verdict.";
+                VerdictDetail = "Run it again and let it finish to get an answer." + survived;
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(_context?.VerdictFailure))
+            {
+                VerdictKindText = "Rules failed";
+                VerdictSeverity = "Warning";
+                VerdictHeadline = "Evidence was collected, but the rules could not be applied to it.";
+                VerdictDetail = "The collection stage worked; the analysis stage failed with: " +
+                                _context.VerdictFailure + "." + survived;
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(_context?.CollectionFailure))
+            {
+                VerdictKindText = "Incomplete";
+                VerdictSeverity = "Warning";
+                VerdictHeadline = "Collection stopped before it finished.";
+                VerdictDetail = _context.CollectionFailure + "." + survived;
+                return;
+            }
+
+            VerdictKindText = "Incomplete";
+            VerdictSeverity = "Warning";
+            VerdictHeadline = "The diagnostic did not produce a verdict.";
+            VerdictDetail = "No reason was recorded, which is itself a defect worth reporting." + survived;
+        }
+
         private static string Humanise(VerdictKind kind)
         {
             switch (kind)
@@ -286,6 +358,54 @@ namespace WinUpgradeDiag.App.ViewModels
                 case VerdictKind.InsufficientEvidence: return "Insufficient evidence";
                 default: return kind.ToString();
             }
+        }
+
+        // ---------------- status bar ----------------
+
+        /// <summary>Machine and privilege, shown in the status bar from launch onwards.</summary>
+        public string MachineName => Environment.MachineName;
+
+        public string ElevationText => IsElevatedSession
+            ? "Administrator"
+            : "Not elevated — protected logs cannot be read";
+
+        public bool IsElevatedSession
+        {
+            get
+            {
+                try
+                {
+                    using (var identity = System.Security.Principal.WindowsIdentity.GetCurrent())
+                    {
+                        return new System.Security.Principal.WindowsPrincipal(identity)
+                            .IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+                    }
+                }
+                catch (Exception)
+                {
+                    return false;
+                }
+            }
+        }
+
+        private string _lastRunText = "No diagnostic run yet";
+        public string LastRunText
+        {
+            get => _lastRunText;
+            private set => Set(ref _lastRunText, value);
+        }
+
+        private void ShowAbout()
+        {
+            ActionDialog.Show(
+                System.Windows.Application.Current?.MainWindow,
+                DialogKind.Information,
+                "WinUpgradeDiag " + DiagnosticRunner.DisplayVersion,
+                "Offline, read-only diagnostic for failed ConfigMgr Windows 10 to 11 in-place upgrades." +
+                Environment.NewLine + Environment.NewLine +
+                "Diagnosis never changes this machine. Recovery tools are separate, confirmed per action, " +
+                "and written to an audit log.",
+                "Build " + DiagnosticRunner.ToolVersion);
         }
 
         private void CopyCommand()

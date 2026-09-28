@@ -1,6 +1,7 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                    xmlns:vm="clr-namespace:WinUpgradeDiag.App.ViewModels">
+                    xmlns:vm="clr-namespace:WinUpgradeDiag.App.ViewModels"
+                    xmlns:ctl="clr-namespace:WinUpgradeDiag.App.Controls">
 
     <!--
         A small, deliberate design system. WPF's default control templates read as a 2006
@@ -151,13 +152,38 @@
         <Setter Property="Background" Value="{StaticResource Surface}" />
         <Setter Property="Foreground" Value="{StaticResource Ink900}" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="ctl:PlaceholderService.Monitor" Value="True" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="TextBox">
-                    <Border CornerRadius="4" Background="{TemplateBinding Background}"
+                    <Border x:Name="Shell" CornerRadius="4" Background="{TemplateBinding Background}"
                             BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
-                        <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" />
+                        <Grid>
+                            <!-- Shown only while the box is empty: tells the operator the shape of
+                                 a valid value, which a bare label above the box cannot. -->
+                            <TextBlock x:Name="Placeholder"
+                                       Text="{Binding (ctl:PlaceholderService.Text), RelativeSource={RelativeSource TemplatedParent}}"
+                                       Margin="{TemplateBinding Padding}"
+                                       Foreground="{StaticResource Ink300}"
+                                       FontStyle="Italic"
+                                       IsHitTestVisible="False"
+                                       VerticalAlignment="Center"
+                                       Visibility="Collapsed" />
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" />
+                        </Grid>
                     </Border>
+                    <ControlTemplate.Triggers>
+                        <DataTrigger Binding="{Binding (ctl:PlaceholderService.IsEmpty), RelativeSource={RelativeSource Self}}"
+                                     Value="True">
+                            <Setter TargetName="Placeholder" Property="Visibility" Value="Visible" />
+                        </DataTrigger>
+                        <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                            <Setter TargetName="Shell" Property="BorderBrush" Value="{StaticResource Brand500}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Shell" Property="Background" Value="{StaticResource Line100}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>

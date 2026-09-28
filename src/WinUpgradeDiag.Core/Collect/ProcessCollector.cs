@@ -18,10 +18,18 @@ namespace WinUpgradeDiag.Core.Collect
             "TSManager", "SetupHost", "setupprep", "CcmExec", "TrustedInstaller"
         };
 
-        /// <summary>The processes whose CPU activity decides whether Setup is working or wedged.</summary>
+        /// <summary>
+        /// The processes whose CPU activity decides whether Setup is working or wedged.
+        /// <para>
+        /// Deliberately only Setup's own workers. TrustedInstaller and TiWorker are busy on any
+        /// machine that is merely installing updates, so including them made the sample fire — and
+        /// stall collection for two seconds — on ordinary healthy machines, while telling us
+        /// nothing about an upgrade.
+        /// </para>
+        /// </summary>
         public static readonly IReadOnlyList<string> UpgradeWorkerNames = new[]
         {
-            "SetupHost", "setupprep", "TiWorker", "TrustedInstaller"
+            "SetupHost", "setupprep"
         };
 
         /// <summary>

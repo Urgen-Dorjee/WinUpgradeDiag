@@ -94,20 +94,39 @@ namespace WinUpgradeDiag.Core.Orchestration
                 cancellationToken.ThrowIfCancellationRequested();
 
                 context.SystemState = new SystemStateCollector().Collect(progress, cancellationToken);
-                cancellationToken.ThrowIfCancellationRequested();
-
-                progress?.Report("Applying diagnostic rules");
-                context.Verdict = new RuleEngine().Evaluate(context, progress, cancellationToken);
             }
             catch (OperationCanceledException)
             {
                 context.Cancelled = true;
             }
-            finally
+            catch (Exception ex)
             {
-                context.FinishedAtUtc = DateTime.UtcNow;
+                // Collection failed partway. Keep whatever was gathered rather than losing the run.
+                context.CollectionFailure = ex.Message;
             }
 
+            // The rules stage is deliberately separated. It runs over what collection produced, so
+            // if it fails — or is cancelled midway through scanning a 700 MB log — the manifest and
+            // system state are still worth showing. Losing them too would turn a partial answer
+            // into no answer at all, which is the opposite of "degrade, never crash".
+            if (!context.Cancelled)
+            {
+                try
+                {
+                    progress?.Report("Applying diagnostic rules");
+                    context.Verdict = new RuleEngine().Evaluate(context, progress, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    context.Cancelled = true;
+                }
+                catch (Exception ex)
+                {
+                    context.VerdictFailure = ex.GetType().Name + ": " + ex.Message;
+                }
+            }
+
+            context.FinishedAtUtc = DateTime.UtcNow;
             return context;
         }
     }

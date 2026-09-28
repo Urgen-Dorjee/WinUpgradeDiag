@@ -54,10 +54,18 @@ namespace WinUpgradeDiag.Core.Rules
             findings.AddRange(EvaluateTaskSequence(state));
             findings.AddRange(EvaluateRollback(context));
             findings.AddRange(EvaluateDiskSpace(state));
+            findings.AddRange(EvaluateCache(state));
             findings.AddRange(EvaluateMachineState(state));
             findings.AddRange(ScanLogs(context, progress, cancellationToken));
 
             var ranked = Rank(findings);
+
+            // Attach the scripted fix, with its parameters resolved from what was collected.
+            foreach (var finding in ranked)
+            {
+                finding.Remediation = Remediation.RemediationCatalog.For(finding.Id, context);
+            }
+
             var gaps = CollectGaps(context, state);
 
             return BuildVerdict(ranked, gaps, state, context);
@@ -443,6 +451,47 @@ namespace WinUpgradeDiag.Core.Rules
                         LogSearchView.FormatSize(state.SystemDriveTotalBytes ?? 0))
                 },
                 command: "cleanmgr /sageset:1");
+        }
+
+        // ----------------------------------------------------------------- client cache
+
+        /// <summary>
+        /// CT-002. A cache record whose folder is gone is the signature of somebody deleting
+        /// ccmcache in Explorer. The client still believes the content is present, so it will not
+        /// download it again and the deployment fails on content it cannot find.
+        /// </summary>
+        private static IEnumerable<Finding> EvaluateCache(SystemState state)
+        {
+            var cache = state.CcmCache;
+            if (cache == null || !cache.Available)
+            {
+                yield break;
+            }
+
+            var stale = cache.StaleElements;
+            if (stale.Count == 0)
+            {
+                yield break;
+            }
+
+            yield return new Finding(
+                "CT-002",
+                stale.Count == 1
+                    ? "A cached content record points at a folder that no longer exists"
+                    : stale.Count + " cached content records point at folders that no longer exist",
+                Severity.Warning,
+                Confidence.High,
+                "The ConfigMgr client still believes this content is downloaded, so it will not fetch it again. " +
+                "A deployment that needs it fails looking for files that are not there. This is what a manual " +
+                "delete of ccmcache leaves behind.",
+                "Remove the stale cache records through the client so WMI and disk agree again, then re-run the " +
+                "deployment.",
+                stale.Take(3)
+                    .Select(e => new Evidence(
+                        "WMI: CacheInfoEx",
+                        null,
+                        "Content " + e.ContentId + " (" + e.SizeText + ") recorded at " + e.Location + ", which is missing"))
+                    .ToList());
         }
 
         // ----------------------------------------------------------------- machine state

@@ -93,6 +93,14 @@ namespace WinUpgradeDiag.Core.Rules
 
         public IReadOnlyList<Evidence> Evidence { get; }
 
+        /// <summary>
+        /// The recovery script that addresses this finding, with its parameters already resolved,
+        /// or null if no scripted fix applies. Set by the rules engine after evaluation.
+        /// </summary>
+        public Remediation.RemediationAction Remediation { get; internal set; }
+
+        public bool HasRemediation => Remediation != null;
+
         public string SeverityText => Severity.ToString();
         public string ConfidenceText => Confidence + " confidence";
         public bool HasCommand => !string.IsNullOrWhiteSpace(Command);
