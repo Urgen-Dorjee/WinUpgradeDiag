@@ -6,6 +6,7 @@ using System.Security.Principal;
 using WinUpgradeDiag.Core.Discovery;
 using WinUpgradeDiag.Tests.Support;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace WinUpgradeDiag.Tests.Discovery
 {
@@ -21,6 +22,13 @@ namespace WinUpgradeDiag.Tests.Discovery
     /// </summary>
     public class ProtectedLogDiscoveryTests
     {
+        private readonly ITestOutputHelper _output;
+
+        public ProtectedLogDiscoveryTests(ITestOutputHelper output)
+        {
+            _output = output;
+        }
+
         [Fact]
         public void A_log_behind_an_unlistable_directory_is_reported_protected_not_absent()
         {
@@ -31,18 +39,22 @@ namespace WinUpgradeDiag.Tests.Discovery
                 var logPath = Path.Combine(dir, "setupact.log");
                 File.WriteAllText(logPath, "2026-09-18 12:10:17, Error SP  rollback evidence\n");
 
-                if (!TryDenyAllAccess(dir))
+                if (!TryDenyAllAccess(dir, logPath))
                 {
-                    // Some environments will not let a test rewrite a DACL. Skipping beats a
-                    // spurious failure, and the assertion below is meaningless without the deny.
+                    // Some environments will not let a test rewrite a DACL, and on others the deny
+                    // does not reach the file. Skipping beats a spurious failure: without the trap
+                    // actually reproduced here, the assertions below test nothing. xUnit 2 has no
+                    // dynamic skip, so say so in the output rather than passing silently — a test
+                    // that quietly stops testing is worse than one that fails.
+                    _output.WriteLine(
+                        "SKIPPED: this environment would not reproduce an unreadable directory, " +
+                        "so protected-not-absent was not exercised here.");
+                    RestoreAccess(dir);
                     return;
                 }
 
                 try
                 {
-                    // Precondition: this is the trap the production code has to work around.
-                    Assert.False(File.Exists(logPath));
-
                     var source = new LogSource(
                         "setup-rollback-act", LogSourceCategory.SetupRollback,
                         "setupact.log (rollback)", "", logPath, highValue: true);
@@ -103,9 +115,18 @@ namespace WinUpgradeDiag.Tests.Discovery
 
         /// <summary>
         /// Strips every access rule from <paramref name="directory"/>, leaving it unlistable.
-        /// Returns true only once that is confirmed to have taken effect.
+        /// Returns true only once the trap this test needs is confirmed to be in place.
+        /// <para>
+        /// The guard has to check the same thing the test asserts. Verifying only that enumeration
+        /// is refused is not enough: "bypass traverse checking" is granted to Everyone by default,
+        /// so a caller who cannot list a directory can still open a file inside it by name if the
+        /// file kept an inherited allow rule. That is a different access check with a different
+        /// answer, and which way it lands varies by machine — this passed on a developer box and on
+        /// one CI run, then failed on the next, blocking a release for an environment difference
+        /// rather than a defect.
+        /// </para>
         /// </summary>
-        private static bool TryDenyAllAccess(string directory)
+        private static bool TryDenyAllAccess(string directory, string fileInside)
         {
             try
             {
@@ -128,7 +149,10 @@ namespace WinUpgradeDiag.Tests.Discovery
             }
             catch (UnauthorizedAccessException)
             {
-                return true;
+                // Listing is refused. Now the part that actually matters: the file behind it must
+                // also be unreachable by name, because that is the trap the production code exists
+                // to work around.
+                return !File.Exists(fileInside);
             }
             catch (Exception)
             {
