@@ -60,7 +60,7 @@ namespace WinUpgradeDiag.App.ViewModels
         {
             RunCommand = new RelayCommand(async () => await RunAsync(), () => State != RunState.Running);
             CancelCommand = new RelayCommand(CancelRun, () => State == RunState.Running);
-            ExportCommand = new RelayCommand(async () => await ExportAsync(), () => _context != null && !_isExporting);
+            ExportCommand = new RelayCommand(async () => await ExportAsync(), () => !_isExporting);
             OpenExportFolderCommand = new RelayCommand(OpenExportFolder, () => _lastExportDirectory != null);
             SearchWholeFileCommand = new RelayCommand(
                 async () => await SearchWholeFileAsync(),
@@ -387,6 +387,23 @@ namespace WinUpgradeDiag.App.ViewModels
                 }
             }
         }
+
+        private string _lastExportText = "";
+
+        /// <summary>Shown in the status bar so the export leaves a trace after the dialog closes.</summary>
+        public string LastExportText
+        {
+            get => _lastExportText;
+            private set
+            {
+                if (Set(ref _lastExportText, value))
+                {
+                    OnPropertyChanged(nameof(HasExported));
+                }
+            }
+        }
+
+        public bool HasExported => !string.IsNullOrEmpty(_lastExportText);
 
         private string _lastRunText = "No diagnostic run yet";
         public string LastRunText
@@ -762,6 +779,23 @@ namespace WinUpgradeDiag.App.ViewModels
 
         private async Task ExportAsync()
         {
+            // Export is reachable from the toolbar and the File menu, but its only feedback used to
+            // be a line of text inside the Export tab. Pressed from anywhere else it wrote the
+            // files and appeared to do nothing at all.
+            if (_context == null)
+            {
+                ExportStatus = "Run a diagnostic first — there is nothing to export yet.";
+                ActionDialog.Show(
+                    System.Windows.Application.Current?.MainWindow,
+                    DialogKind.Information,
+                    "Nothing to export yet",
+                    "Run a diagnostic first. The export contains the verdict, the findings and their " +
+                    "evidence, the log manifest and the collected machine state — none of which exists " +
+                    "until a run has happened.",
+                    "Nothing was written.");
+                return;
+            }
+
             var artifacts = ExportArtifacts.None;
             if (ExportHtml) artifacts |= ExportArtifacts.Html;
             if (ExportJson) artifacts |= ExportArtifacts.Json;
@@ -770,6 +804,13 @@ namespace WinUpgradeDiag.App.ViewModels
             if (artifacts == ExportArtifacts.None)
             {
                 ExportStatus = "Choose at least one thing to export.";
+                ActionDialog.Show(
+                    System.Windows.Application.Current?.MainWindow,
+                    DialogKind.Warning,
+                    "Nothing selected to export",
+                    "Every output is switched off. Choose the HTML report, the JSON, or the evidence " +
+                    "zip on the Export tab, then try again.",
+                    "Nothing was written.");
                 return;
             }
 
@@ -798,10 +839,46 @@ namespace WinUpgradeDiag.App.ViewModels
                     }
                 }
                 ExportStatus = string.Join(Environment.NewLine, lines);
+                LastExportText = "Exported " + DateTime.Now.ToString("HH:mm:ss", CultureInfo.CurrentCulture);
+
+                var written = new List<string>();
+                if (result.HtmlPath != null) written.Add(System.IO.Path.GetFileName(result.HtmlPath) + " — the report for the ticket");
+                if (result.JsonPath != null) written.Add(System.IO.Path.GetFileName(result.JsonPath) + " — machine-readable, for fleet aggregation");
+                if (result.EvidenceZipPath != null) written.Add(System.IO.Path.GetFileName(result.EvidenceZipPath) + " — the collected logs, NOT redacted");
+
+                // Offer the folder straight away: the path alone still leaves the technician to go
+                // and find it, and the point of exporting is to attach the file to something.
+                var openIt = ActionDialog.Confirm(
+                    System.Windows.Application.Current?.MainWindow,
+                    DialogKind.Success,
+                    "Export complete",
+                    result.OutputDirectory,
+                    written,
+                    result.EvidenceZipPath != null
+                        ? new[] { "The evidence zip is NOT redacted. Keep it on internal systems only." }
+                        : null,
+                    null,
+                    "Open folder",
+                    null,
+                    "Also available from File \u2192 Open last output folder.",
+                    null,
+                    "FILES WRITTEN",
+                    "KEEP IN MIND");
+
+                if (openIt)
+                {
+                    OpenExportFolder();
+                }
             }
             catch (Exception ex)
             {
                 ExportStatus = "Export failed: " + ex.Message;
+                ActionDialog.Show(
+                    System.Windows.Application.Current?.MainWindow,
+                    DialogKind.Warning,
+                    "Export failed",
+                    ex.Message,
+                    "Check the output folder on the Export tab is somewhere you can write to.");
             }
             finally
             {

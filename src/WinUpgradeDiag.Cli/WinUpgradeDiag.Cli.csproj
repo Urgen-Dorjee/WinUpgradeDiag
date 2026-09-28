@@ -11,4 +11,19 @@
     <ProjectReference Include="..\WinUpgradeDiag.Core\WinUpgradeDiag.Core.csproj" />
   </ItemGroup>
 
+  <!--
+    Ship one file, for the same reason the WPF head does.
+
+    This head is what runs remotely, from a share, or through a ConfigMgr Run Script — every one
+    of those paths copies a file somewhere and executes it, and a second file that must travel
+    alongside is a step that gets missed. EmbeddedAssemblyLoader resolves it at run time.
+  -->
+  <Target Name="EmbedDependencies" AfterTargets="ResolveReferences" BeforeTargets="PrepareResources">
+    <ItemGroup>
+      <EmbeddedResource Include="@(ReferencePath)" Condition="'%(ReferencePath.Filename)' == 'WinUpgradeDiag.Core'">
+        <LogicalName>WinUpgradeDiag.Cli.Dependencies.%(ReferencePath.Filename).dll</LogicalName>
+      </EmbeddedResource>
+    </ItemGroup>
+  </Target>
+
 </Project>

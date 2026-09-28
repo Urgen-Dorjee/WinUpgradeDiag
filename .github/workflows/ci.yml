@@ -35,12 +35,17 @@ jobs:
           # The whole point of the single-file build: if the Core assembly stops being embedded,
           # the tool silently reverts to needing a DLL beside it and fails on a technician's
           # machine rather than here.
-          $resources = [Reflection.Assembly]::LoadFrom((Resolve-Path $exe)).GetManifestResourceNames()
-          $expected = 'WinUpgradeDiag.App.Dependencies.WinUpgradeDiag.Core.dll'
-          if ($resources -notcontains $expected) {
-              throw "The Core assembly is not embedded. Found: $($resources -join ', ')"
+          foreach ($pair in @(
+              @{ Path = $exe; Resource = 'WinUpgradeDiag.App.Dependencies.WinUpgradeDiag.Core.dll' },
+              @{ Path = 'src/WinUpgradeDiag.Cli/bin/Release/net48/WinUpgradeDiag.Cli.exe'
+                 Resource = 'WinUpgradeDiag.Cli.Dependencies.WinUpgradeDiag.Core.dll' }
+          )) {
+              $resources = [Reflection.Assembly]::LoadFrom((Resolve-Path $pair.Path)).GetManifestResourceNames()
+              if ($resources -notcontains $pair.Resource) {
+                  throw "$($pair.Path) is not self-contained. Found: $($resources -join ', ')"
+              }
+              Write-Host "Self-contained: $($pair.Path)"
           }
-          Write-Host "Self-contained: $expected is embedded."
 
       - name: Check the recovery scripts are embedded
         shell: pwsh
@@ -57,6 +62,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: WinUpgradeDiag-${{ github.sha }}
-          path: src/WinUpgradeDiag.App/bin/Release/net48/WinUpgradeDiag.exe
+          path: |
+            src/WinUpgradeDiag.App/bin/Release/net48/WinUpgradeDiag.exe
+            src/WinUpgradeDiag.Cli/bin/Release/net48/WinUpgradeDiag.Cli.exe
           if-no-files-found: error
           retention-days: 30

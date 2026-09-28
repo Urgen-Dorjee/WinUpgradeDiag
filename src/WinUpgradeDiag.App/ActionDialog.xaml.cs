@@ -181,7 +181,7 @@ namespace WinUpgradeDiag.App
         public static void Show(
             Window owner, DialogKind kind, string title, string body, string footerNote = null)
         {
-            var dialog = Build(owner, kind, title, body, null, null, null, footerNote);
+            var dialog = Build(owner, kind, title, body, null, null, null, footerNote, null, null);
             dialog.CancelButton.Visibility = Visibility.Collapsed;
             dialog.PrimaryButton.Content = "Close";
             dialog.ShowDialog();
@@ -202,9 +202,12 @@ namespace WinUpgradeDiag.App
             string primaryLabel,
             string typedConfirmation = null,
             string footerNote = null,
-            string acknowledgement = null)
+            string acknowledgement = null,
+            string stepsHeading = null,
+            string conditionsHeading = null)
         {
-            var dialog = Build(owner, kind, title, body, steps, conditions, command, footerNote);
+            var dialog = Build(owner, kind, title, body, steps, conditions, command, footerNote,
+                               stepsHeading, conditionsHeading);
             dialog.PrimaryButton.Content = primaryLabel ?? "Run it";
 
             if (!string.IsNullOrWhiteSpace(acknowledgement))
@@ -233,17 +236,20 @@ namespace WinUpgradeDiag.App
             IReadOnlyList<string> steps,
             IReadOnlyList<string> conditions,
             string command,
-            string footerNote)
+            string footerNote,
+            string stepsHeading,
+            string conditionsHeading)
         {
             var dialog = new ActionDialog();
             dialog.TitleText.Text = title ?? string.Empty;
             dialog.Title = title ?? "WinUpgradeDiag";
 
-            // Application.Current.MainWindow can still be unset — or, if this dialog is the first
-            // window created, can be this dialog. Assigning either would throw, and a dialog that
-            // cannot open is worse than one that opens unparented.
+            // Owner is set defensively. WPF throws if it is this dialog itself, and also if the
+            // candidate parent has never been shown — which happens when something fails during
+            // startup, including inside the unhandled-exception handler, precisely the moment a
+            // dialog matters most. A dialog that cannot open is worse than an unparented one.
             var parent = owner ?? Application.Current?.MainWindow;
-            if (parent != null && !ReferenceEquals(parent, dialog))
+            if (parent != null && !ReferenceEquals(parent, dialog) && IsShown(parent))
             {
                 dialog.Owner = parent;
             }
@@ -259,8 +265,25 @@ namespace WinUpgradeDiag.App
                 dialog.BodyText.Visibility = Visibility.Visible;
             }
 
+            // The default headings describe a remediation. Reused verbatim for, say, an export
+            // result they read as nonsense — "IT WILL: report.html" — so callers can relabel them.
+            if (!string.IsNullOrWhiteSpace(stepsHeading))
+            {
+                dialog.StepsHeading.Text = stepsHeading;
+            }
+            if (!string.IsNullOrWhiteSpace(conditionsHeading))
+            {
+                dialog.ConditionsHeading.Text = conditionsHeading;
+            }
+
             dialog.SetSection(dialog.StepsPanel, dialog.StepsList, steps);
             dialog.SetSection(dialog.ConditionsPanel, dialog.ConditionsList, conditions);
+
+            // "Cancel" is wrong next to a result that has already happened.
+            if (kind == DialogKind.Success)
+            {
+                dialog.CancelButton.Content = "Close";
+            }
 
             if (!string.IsNullOrWhiteSpace(command))
             {
@@ -275,6 +298,22 @@ namespace WinUpgradeDiag.App
             }
 
             return dialog;
+        }
+
+        /// <summary>
+        /// Whether a window has actually been shown. A Window only acquires a native handle when it
+        /// is displayed, and assigning an un-shown window as an Owner throws.
+        /// </summary>
+        private static bool IsShown(Window window)
+        {
+            try
+            {
+                return new System.Windows.Interop.WindowInteropHelper(window).Handle != IntPtr.Zero;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
         }
 
         /// <summary>Splits a paragraph into lines, for callers that only have free text.</summary>

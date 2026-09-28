@@ -79,8 +79,8 @@
                         Background="{StaticResource WarningBg}" BorderBrush="{StaticResource WarningLine}"
                         BorderThickness="1" Visibility="Collapsed">
                     <StackPanel>
-                        <TextBlock Style="{StaticResource ChipText}" Foreground="{StaticResource WarningFg}"
-                                   Text="ONLY RUN THIS IF" />
+                        <TextBlock x:Name="ConditionsHeading" Style="{StaticResource ChipText}"
+                                   Foreground="{StaticResource WarningFg}" Text="ONLY RUN THIS IF" />
                         <ItemsControl x:Name="ConditionsList" Margin="0,6,0,0">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>

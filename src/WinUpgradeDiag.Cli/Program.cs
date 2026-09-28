@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Security.Principal;
 using System.Threading;
 using WinUpgradeDiag.Core.Discovery;
@@ -30,13 +31,13 @@ namespace WinUpgradeDiag.Cli
         }
 
         private const string Usage =
-@"WinUpgradeDiag.Cli — offline, read-only upgrade diagnostic (phase 1: collect + export, no verdict)
+@"WinUpgradeDiag.Cli — offline, read-only diagnostic for failed Windows 10 to 11 in-place upgrades
 
 Usage:
   WinUpgradeDiag.Cli [--output <folder>] [--no-redact] [--no-html] [--no-json] [--zip] [--quiet]
   WinUpgradeDiag.Cli --find <text> [--in <path>] [--context <n>] [--max-matches <n>] [--quiet]
 
-Collect and export:
+Collect, diagnose and export:
   --output <folder>  Root folder for results (default: %ProgramData%\WinUpgradeDiag).
                      A subfolder UpgradeDiag_<PC>_<timestamp> is created inside it.
   --no-redact        Do not redact usernames/profile paths/machine name in HTML and JSON.
@@ -59,7 +60,23 @@ Common:
 Exit codes: 0 ok, 1 export failed, 2 bad arguments, 3 cancelled,
             4 ran but not elevated (protected logs unreadable).";
 
+        /// <summary>
+        /// Deliberately thin, and deliberately free of any Core type.
+        /// <para>
+        /// The JIT resolves a method's assembly references the first time that method is compiled.
+        /// If Main touched a Core type directly, the runtime would try to load Core before the
+        /// resolver below had been installed, and the single-file build would fail at startup.
+        /// All the real work lives in <see cref="Run"/>, which is not inlined for the same reason.
+        /// </para>
+        /// </summary>
         private static int Main(string[] args)
+        {
+            EmbeddedAssemblyLoader.Install();
+            return Run(args);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static int Run(string[] args)
         {
             string output = null;
             string findText = null;

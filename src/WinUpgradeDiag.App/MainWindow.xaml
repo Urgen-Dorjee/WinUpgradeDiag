@@ -85,8 +85,14 @@
         <!-- ==================== Status bar ==================== -->
         <Border DockPanel.Dock="Bottom" Background="{StaticResource Brand900}" Padding="14,5">
             <DockPanel>
-                <TextBlock DockPanel.Dock="Right" Foreground="#FF9FB4CC" FontSize="11"
-                           VerticalAlignment="Center" Text="{Binding LastRunText, Mode=OneWay}" />
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <TextBlock Foreground="#FF9FB4CC" FontSize="11" VerticalAlignment="Center"
+                               Text="{Binding LastExportText, Mode=OneWay}" />
+                    <TextBlock Foreground="#FF6B8299" FontSize="11" VerticalAlignment="Center" Margin="10,0"
+                               Text="|" Visibility="{Binding HasExported, Converter={StaticResource BoolToVisibility}}" />
+                    <TextBlock Foreground="#FF9FB4CC" FontSize="11" VerticalAlignment="Center"
+                               Text="{Binding LastRunText, Mode=OneWay}" />
+                </StackPanel>
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Foreground="#FFC9D6E8" FontSize="11" VerticalAlignment="Center"
                                Text="{Binding MachineName, Mode=OneWay}" />

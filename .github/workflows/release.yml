@@ -45,12 +45,19 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item 'src/WinUpgradeDiag.App/bin/Release/net48/WinUpgradeDiag.exe' dist/
+          Copy-Item 'src/WinUpgradeDiag.Cli/bin/Release/net48/WinUpgradeDiag.Cli.exe' dist/
 
           # The hash is what the endpoint security team allow-lists, so it belongs beside the
           # download rather than in a separate email.
           $hash = (Get-FileHash dist/WinUpgradeDiag.exe -Algorithm SHA256).Hash
           $size = [math]::Round((Get-Item dist/WinUpgradeDiag.exe).Length / 1KB)
-          "$hash  WinUpgradeDiag.exe" | Set-Content dist/WinUpgradeDiag.exe.sha256
+          $cliHash = (Get-FileHash dist/WinUpgradeDiag.Cli.exe -Algorithm SHA256).Hash
+
+          # Both hashes in one file: the security team allow-lists whichever head is deployed.
+          @(
+            "$hash  WinUpgradeDiag.exe"
+            "$cliHash  WinUpgradeDiag.Cli.exe"
+          ) | Set-Content dist/SHA256SUMS.txt
 
           "SHA256=$hash" | Out-File -Append $env:GITHUB_ENV
           "SIZE=$size"   | Out-File -Append $env:GITHUB_ENV
@@ -63,10 +70,15 @@ jobs:
           # double-quoted one would eat the markdown code fences. Placeholders are substituted
           # afterwards rather than interpolated.
           $notes = @'
-          Single self-contained `WinUpgradeDiag.exe` (__SIZE__ KB). The Core assembly and all 12
-          recovery scripts are embedded, so nothing else needs to be copied alongside it.
+          Two self-contained executables. Each carries the Core assembly and all 12 recovery
+          scripts inside it, so nothing else needs to be copied alongside.
 
-          **SHA-256**
+          | File | Use |
+          | --- | --- |
+          | `WinUpgradeDiag.exe` (__SIZE__ KB) | The window. Run it on the affected machine. |
+          | `WinUpgradeDiag.Cli.exe` | Console head, for a ConfigMgr Run Script or a remote session. |
+
+          **SHA-256** — both hashes are in `SHA256SUMS.txt` attached below. The GUI head is:
 
           ```
           __SHA256__
@@ -102,6 +114,7 @@ jobs:
 
           gh release create $tag `
             dist/WinUpgradeDiag.exe `
-            dist/WinUpgradeDiag.exe.sha256 `
+            dist/WinUpgradeDiag.Cli.exe `
+            dist/SHA256SUMS.txt `
             --title "WinUpgradeDiag $tag" `
             --notes-file dist/notes.md
