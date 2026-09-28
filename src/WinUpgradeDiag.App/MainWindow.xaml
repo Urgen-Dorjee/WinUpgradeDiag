@@ -28,6 +28,7 @@
         <Menu DockPanel.Dock="Top" Background="{StaticResource Surface}" Padding="6,3"
               BorderBrush="{StaticResource Line200}" BorderThickness="0,0,0,1">
             <MenuItem Header="_File">
+                <MenuItem Header="_Choose where to save…" Command="{Binding BrowseOutputRootCommand}" />
                 <MenuItem Header="_Export results…" Command="{Binding ExportCommand}"
                           InputGestureText="Ctrl+E" />
                 <MenuItem Header="Open last _output folder" Command="{Binding OpenExportFolderCommand}" />
@@ -671,12 +672,30 @@
                             <Border Style="{StaticResource Card}" MaxWidth="700" HorizontalAlignment="Left">
                                 <StackPanel>
                                     <TextBlock Style="{StaticResource ChipText}" Foreground="{StaticResource Ink500}"
-                                               Text="OUTPUT FOLDER" />
-                                    <TextBox Text="{Binding OutputRoot, UpdateSourceTrigger=PropertyChanged}"
-                                             Margin="0,6,0,4"
-                                             ctl:PlaceholderService.Text="e.g. C:\ProgramData\WinUpgradeDiag" />
-                                    <TextBlock Style="{StaticResource CaptionText}" Margin="0,0,0,18"
-                                               Text="A timestamped subfolder is created inside this one for each run." />
+                                               Text="WHERE TO SAVE" />
+
+                                    <!-- Browse, rather than type. A path typed by hand is the one
+                                         step here where a typo is silent: the export succeeds and
+                                         the report lands somewhere nobody looks. -->
+                                    <DockPanel Margin="0,6,0,4">
+                                        <Button DockPanel.Dock="Right" Content="Browse&#8230;"
+                                                Command="{Binding BrowseOutputRootCommand}"
+                                                Style="{StaticResource SecondaryButton}"
+                                                MinWidth="96" Margin="8,0,0,0"
+                                                ToolTip="Choose the folder to save the report in" />
+                                        <TextBox Text="{Binding OutputRoot, UpdateSourceTrigger=PropertyChanged}"
+                                                 VerticalAlignment="Center"
+                                                 ctl:PlaceholderService.Text="e.g. C:\ProgramData\WinUpgradeDiag" />
+                                    </DockPanel>
+
+                                    <DockPanel Margin="0,0,0,18">
+                                        <Button DockPanel.Dock="Right" Content="Use default"
+                                                Command="{Binding ResetOutputRootCommand}"
+                                                Style="{StaticResource SubtleButton}" Margin="8,0,0,0" Padding="8,2"
+                                                ToolTip="Put it back to C:\ProgramData\WinUpgradeDiag" />
+                                        <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap"
+                                                   Text="{Binding OutputPreview}" />
+                                    </DockPanel>
 
                                     <TextBlock Style="{StaticResource ChipText}" Foreground="{StaticResource Ink500}"
                                                Text="WHAT TO WRITE" />

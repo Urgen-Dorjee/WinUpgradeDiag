@@ -62,6 +62,10 @@ namespace WinUpgradeDiag.App.ViewModels
             CancelCommand = new RelayCommand(CancelRun, () => State == RunState.Running);
             ExportCommand = new RelayCommand(async () => await ExportAsync(), () => !_isExporting);
             OpenExportFolderCommand = new RelayCommand(OpenExportFolder, () => _lastExportDirectory != null);
+            BrowseOutputRootCommand = new RelayCommand(BrowseOutputRoot);
+            ResetOutputRootCommand = new RelayCommand(
+                () => OutputRoot = ReportExporter.DefaultOutputRoot,
+                () => !string.Equals(_outputRoot, ReportExporter.DefaultOutputRoot, StringComparison.OrdinalIgnoreCase));
             SearchWholeFileCommand = new RelayCommand(
                 async () => await SearchWholeFileAsync(),
                 () => !_isSearching && _selectedManifestRow != null && !string.IsNullOrWhiteSpace(_viewerFilter));
@@ -80,6 +84,8 @@ namespace WinUpgradeDiag.App.ViewModels
         public RelayCommand CancelCommand { get; }
         public RelayCommand ExportCommand { get; }
         public RelayCommand OpenExportFolderCommand { get; }
+        public RelayCommand BrowseOutputRootCommand { get; }
+        public RelayCommand ResetOutputRootCommand { get; }
         public RelayCommand SearchWholeFileCommand { get; }
         public RelayCommand CancelSearchCommand { get; }
         public RelayCommand CopyCommandCommand { get; }
@@ -163,6 +169,7 @@ namespace WinUpgradeDiag.App.ViewModels
             }
 
             PopulateResults();
+            OnPropertyChanged(nameof(OutputPreview));
             LastRunText = "Last run " + DateTime.Now.ToString("HH:mm:ss", CultureInfo.CurrentCulture);
             State = RunState.Results;
         }
@@ -770,7 +777,65 @@ namespace WinUpgradeDiag.App.ViewModels
 
         // ---------------- Export ----------------
 
-        public string OutputRoot { get => _outputRoot; set => Set(ref _outputRoot, value); }
+        public string OutputRoot
+        {
+            get => _outputRoot;
+            set
+            {
+                if (Set(ref _outputRoot, value))
+                {
+                    OnPropertyChanged(nameof(OutputPreview));
+                    System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The folder this run will actually create, spelled out. The box holds a parent folder and
+        /// each run adds a timestamped subfolder inside it, so what the operator types is never
+        /// quite where the files land — and a blank box silently means the default. Showing the
+        /// resolved path removes both surprises before the export rather than after it.
+        /// </summary>
+        public string OutputPreview
+        {
+            get
+            {
+                var root = string.IsNullOrWhiteSpace(_outputRoot) ? ReportExporter.DefaultOutputRoot : _outputRoot;
+                var machine = _context?.SystemState?.MachineName ?? Environment.MachineName;
+                var stamp = (_context?.StartedAtUtc.ToLocalTime() ?? DateTime.Now)
+                    .ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+                var folder = "UpgradeDiag_" + machine + "_" + stamp;
+
+                // The box is still free text, so the path can be nonsense mid-keystroke. Saying so
+                // here is better than letting Export fail later with a framework exception.
+                try
+                {
+                    return "Saves to  " + System.IO.Path.Combine(root, folder);
+                }
+                catch (ArgumentException)
+                {
+                    return "That is not a usable folder path. Use Browse to pick one.";
+                }
+            }
+        }
+
+        /// <summary>
+        /// Picks the output folder from the standard shell dialog. Typing a path was the only way
+        /// to set this, which is both slower and the one step where a silent typo sends the report
+        /// somewhere nobody thinks to look.
+        /// </summary>
+        private void BrowseOutputRoot()
+        {
+            var chosen = Controls.FolderPicker.Pick(
+                System.Windows.Application.Current?.MainWindow,
+                "Choose where to save the diagnostic report",
+                string.IsNullOrWhiteSpace(_outputRoot) ? ReportExporter.DefaultOutputRoot : _outputRoot);
+
+            if (!string.IsNullOrWhiteSpace(chosen))
+            {
+                OutputRoot = chosen;
+            }
+        }
         public bool ExportHtml { get => _exportHtml; set => Set(ref _exportHtml, value); }
         public bool ExportJson { get => _exportJson; set => Set(ref _exportJson, value); }
         public bool ExportZip { get => _exportZip; set => Set(ref _exportZip, value); }
