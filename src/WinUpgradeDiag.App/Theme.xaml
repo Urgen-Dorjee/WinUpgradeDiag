@@ -143,6 +143,16 @@
         <Setter Property="HorizontalAlignment" Value="Left" />
     </Style>
 
+    <!-- For controls sitting on the dark transcript pane, where the light-surface
+         secondary button would disappear. -->
+    <Style x:Key="DarkPaneButton" TargetType="Button" BasedOn="{StaticResource ButtonBase}">
+        <Setter Property="Background" Value="#FF243041" />
+        <Setter Property="Foreground" Value="#FFD6E2F0" />
+        <Setter Property="BorderBrush" Value="#FF3A4A60" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="FontSize" Value="11" />
+    </Style>
+
     <!-- ============================ Inputs ============================ -->
     <Style TargetType="TextBox">
         <Setter Property="Padding" Value="8,6" />

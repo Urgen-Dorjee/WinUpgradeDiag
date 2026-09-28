@@ -46,6 +46,10 @@ namespace WinUpgradeDiag.App.ViewModels
             CancelToolCommand = new RelayCommand(() => _cts?.Cancel(), () => _isRunning);
             PreviewToolCommand = new RelayCommand<ToolRow>(PreviewTool, row => !_isRunning && row != null);
             BrowseScriptFolderCommand = new RelayCommand(BrowseScriptFolder, () => !_isRunning);
+            // The transcript pane had no way out: once a tool had written to it, it sat on screen
+            // for the rest of the session with no control to dismiss it.
+            ClearOutputCommand = new RelayCommand(ClearOutput, () => !_isRunning && HasOutput);
+            CopyOutputCommand = new RelayCommand(CopyOutput, () => HasOutput);
             OpenScriptFolderCommand = new RelayCommand(OpenScriptFolder, () => ScriptsFound);
 
             GroupedTools = System.Windows.Data.CollectionViewSource.GetDefaultView(Tools);
@@ -53,8 +57,8 @@ namespace WinUpgradeDiag.App.ViewModels
                 new System.Windows.Data.PropertyGroupDescription(nameof(ToolRow.Category)));
 
             _status = ScriptsFound
-                ? "Recovery scripts found."
-                : "Recovery scripts not found. Set the folder containing Check-UpgradeState.ps1.";
+                ? "Ready. Pick a tool, or Preview one to see exactly what it would run."
+                : "No recovery scripts are available. Set the folder containing Check-UpgradeState.ps1.";
         }
 
         public ObservableCollection<ToolRow> Tools { get; } = new ObservableCollection<ToolRow>();
@@ -70,6 +74,8 @@ namespace WinUpgradeDiag.App.ViewModels
         public RelayCommand CancelToolCommand { get; }
         public RelayCommand<ToolRow> PreviewToolCommand { get; }
         public RelayCommand BrowseScriptFolderCommand { get; }
+        public RelayCommand ClearOutputCommand { get; }
+        public RelayCommand CopyOutputCommand { get; }
         public RelayCommand OpenScriptFolderCommand { get; }
 
         /// <summary>Folder holding the recovery scripts. Editable, because deployments differ.</summary>
@@ -82,16 +88,61 @@ namespace WinUpgradeDiag.App.ViewModels
                 {
                     OnPropertyChanged(nameof(ScriptsFound));
                     OnPropertyChanged(nameof(ScriptsMissing));
+                    OnPropertyChanged(nameof(ScriptsOnDisk));
+                    OnPropertyChanged(nameof(ScriptSourceText));
+                    OnPropertyChanged(nameof(HasScriptFolder));
                     System.Windows.Input.CommandManager.InvalidateRequerySuggested();
                 }
             }
         }
 
-        public bool ScriptsFound =>
-            !string.IsNullOrWhiteSpace(ScriptFolder) &&
-            File.Exists(Path.Combine(ScriptFolder, "Check-UpgradeState.ps1"));
+        /// <summary>
+        /// Whether the tools can actually run.
+        /// <para>
+        /// Every script ships inside the assembly, so on the single-file build this is always true
+        /// and the folder is irrelevant. Checking only for a file on disk made the Tools tab open
+        /// with "The recovery scripts were not found" on exactly the deployment the tool is meant
+        /// for — a lone .exe copied onto a broken machine — while the tools underneath worked
+        /// perfectly, because the runner prefers the embedded copy anyway.
+        /// </para>
+        /// </summary>
+        public bool ScriptsFound => ToolCatalog.ScriptsAvailable(ScriptFolder);
 
         public bool ScriptsMissing => !ScriptsFound;
+
+        /// <summary>Scripts carried inside this build. The normal case.</summary>
+        public bool ScriptsEmbedded => ToolCatalog.ScriptsEmbedded;
+
+        /// <summary>A folder was pointed at and holds the scripts. An override, not a requirement.</summary>
+        public bool ScriptsOnDisk => ToolCatalog.ScriptsInFolder(ScriptFolder);
+
+        /// <summary>Where the scripts that will run are coming from, in one line.</summary>
+        public string ScriptSourceText
+        {
+            get
+            {
+                if (ScriptsOnDisk)
+                {
+                    return ScriptsEmbedded
+                        ? "Overridden by the folder below. The embedded copies are being ignored."
+                        : "Loaded from the folder below.";
+                }
+
+                if (ScriptsEmbedded)
+                {
+                    var count = EmbeddedScriptProvider.AvailableScripts.Count;
+                    return count + " script(s) embedded in this build. Nothing needs to be copied alongside the .exe.";
+                }
+
+                return "No scripts are available. This build carries none and no folder has been set.";
+            }
+        }
+
+        /// <summary>Clears the transcript so the pane can be dismissed once it has been read.</summary>
+        public void ClearOutput()
+        {
+            Output = "";
+        }
 
         public ToolRow SelectedTool
         {
@@ -109,8 +160,18 @@ namespace WinUpgradeDiag.App.ViewModels
         public string Output
         {
             get => _output;
-            private set => Set(ref _output, value);
+            private set
+            {
+                if (Set(ref _output, value))
+                {
+                    OnPropertyChanged(nameof(HasOutput));
+                    System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+                }
+            }
         }
+
+        /// <summary>True once a folder override is set, so the path row can stay hidden until then.</summary>
+        public bool HasScriptFolder => !string.IsNullOrWhiteSpace(ScriptFolder);
 
         public bool IsRunning
         {
@@ -348,6 +409,21 @@ namespace WinUpgradeDiag.App.ViewModels
                 Status = ScriptsFound
                     ? "Recovery scripts found."
                     : "Check-UpgradeState.ps1 was not found in that folder.";
+            }
+        }
+
+        /// <summary>Puts the transcript on the clipboard, which is where a ticket note comes from.</summary>
+        private void CopyOutput()
+        {
+            try
+            {
+                Clipboard.SetText(Output ?? "");
+                Status = "Output copied to the clipboard.";
+            }
+            catch (Exception ex)
+            {
+                // The clipboard can be locked by another process; that is not worth a dialog.
+                Status = "Could not copy: " + ex.Message;
             }
         }
 

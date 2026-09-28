@@ -326,6 +326,46 @@ namespace WinUpgradeDiag.Core.Remediation
         }
 
         /// <summary>
+        /// Whether the catalogue's scripts can actually be run.
+        /// <para>
+        /// Lives here because the UI used to answer this for itself, by looking only for a file on
+        /// disk. The runner had always preferred the embedded copy, so on the single-file build the
+        /// two disagreed: the Tools tab opened with "the recovery scripts were not found" while
+        /// every tool underneath ran perfectly. One answer, in the layer that owns the scripts.
+        /// </para>
+        /// </summary>
+        /// <param name="scriptFolder">Optional folder override; may be null or empty.</param>
+        public static bool ScriptsAvailable(string scriptFolder)
+        {
+            return ScriptsEmbedded || ScriptsInFolder(scriptFolder);
+        }
+
+        /// <summary>True when this build carries the scripts inside it. The normal deployment.</summary>
+        public static bool ScriptsEmbedded => EmbeddedScriptProvider.Contains(MarkerScript);
+
+        /// <summary>True when the given folder holds the scripts.</summary>
+        public static bool ScriptsInFolder(string scriptFolder)
+        {
+            if (string.IsNullOrWhiteSpace(scriptFolder))
+            {
+                return false;
+            }
+
+            try
+            {
+                return File.Exists(Path.Combine(scriptFolder, MarkerScript));
+            }
+            catch (Exception)
+            {
+                // An unusable path is "no", never an exception out of a property the UI binds to.
+                return false;
+            }
+        }
+
+        /// <summary>The script every other tool sits beside; used to recognise the set.</summary>
+        public const string MarkerScript = "Check-UpgradeState.ps1";
+
+        /// <summary>
         /// Finds the folder holding the recovery scripts: beside the executable first, then walking
         /// up the tree, which is what makes it work from both a deployed copy and a dev build.
         /// Returns null when the scripts are not present, so the UI can say so rather than fail
@@ -360,7 +400,7 @@ namespace WinUpgradeDiag.Core.Remediation
             try
             {
                 // The marker is the state-check script: every other tool sits beside it.
-                if (File.Exists(Path.Combine(root, "Check-UpgradeState.ps1")))
+                if (File.Exists(Path.Combine(root, MarkerScript)))
                 {
                     return root;
                 }

@@ -118,6 +118,49 @@ namespace WinUpgradeDiag.Tests.Remediation
             Assert.False(EmbeddedScriptProvider.MatchesEmbedded("Check-UpgradeState.ps1", @"C:\nope\nothing.ps1"));
         }
 
+        /// <summary>
+        /// The Tools tab answered this for itself by looking only for a file on disk, so the
+        /// single-file build - the one a technician copies onto a broken machine - opened with
+        /// "the recovery scripts were not found" while every tool underneath ran fine.
+        /// </summary>
+        [Fact]
+        public void Scripts_are_available_with_no_folder_because_they_are_embedded()
+        {
+            Assert.True(ToolCatalog.ScriptsEmbedded);
+
+            Assert.True(ToolCatalog.ScriptsAvailable(null));
+            Assert.True(ToolCatalog.ScriptsAvailable(""));
+            Assert.True(ToolCatalog.ScriptsAvailable("   "));
+            Assert.True(ToolCatalog.ScriptsAvailable(@"Z:
+owheretll"));
+
+            // A folder that does not hold them is simply not an override.
+            Assert.False(ToolCatalog.ScriptsInFolder(@"Z:
+owheretll"));
+            Assert.False(ToolCatalog.ScriptsInFolder(null));
+        }
+
+        [Fact]
+        public void An_unusable_folder_path_is_answered_not_thrown()
+        {
+            // Bound straight to the UI, so it must never throw for anything typed into a textbox.
+            Assert.False(ToolCatalog.ScriptsInFolder("C:\\bad|path"));
+            Assert.False(ToolCatalog.ScriptsInFolder(new string('x', 400)));
+        }
+
+        [Fact]
+        public void A_folder_holding_the_scripts_is_recognised_as_an_override()
+        {
+            using (var tmp = new TempDirectory())
+            {
+                Assert.False(ToolCatalog.ScriptsInFolder(tmp.Path));
+
+                tmp.File(ToolCatalog.MarkerScript, "# stand-in");
+                Assert.True(ToolCatalog.ScriptsInFolder(tmp.Path));
+                Assert.True(ToolCatalog.ScriptsAvailable(tmp.Path));
+            }
+        }
+
         [Fact]
         public void A_tool_can_run_with_no_script_folder_configured_at_all()
         {
