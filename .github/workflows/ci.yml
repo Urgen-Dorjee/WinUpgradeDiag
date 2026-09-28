@@ -1,0 +1,62 @@
+name: Build and test
+
+# Every push and pull request. The golden-file and fixture testing in docs/DESIGN.md §6 only has
+# teeth if something actually runs it; this is that something.
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # Windows is not optional: the project targets .NET Framework 4.8 and the tests exercise WMI,
+    # the registry, NTFS ACLs and PowerShell execution.
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build (Release)
+        run: dotnet build WinUpgradeDiag.sln -c Release --nologo
+
+      - name: Test
+        run: dotnet test tests/WinUpgradeDiag.Tests/WinUpgradeDiag.Tests.csproj -c Release --nologo
+
+      - name: Check the binary is self-contained
+        shell: pwsh
+        run: |
+          $exe = 'src/WinUpgradeDiag.App/bin/Release/net48/WinUpgradeDiag.exe'
+          if (-not (Test-Path $exe)) { throw "WinUpgradeDiag.exe was not produced." }
+
+          # The whole point of the single-file build: if the Core assembly stops being embedded,
+          # the tool silently reverts to needing a DLL beside it and fails on a technician's
+          # machine rather than here.
+          $resources = [Reflection.Assembly]::LoadFrom((Resolve-Path $exe)).GetManifestResourceNames()
+          $expected = 'WinUpgradeDiag.App.Dependencies.WinUpgradeDiag.Core.dll'
+          if ($resources -notcontains $expected) {
+              throw "The Core assembly is not embedded. Found: $($resources -join ', ')"
+          }
+          Write-Host "Self-contained: $expected is embedded."
+
+      - name: Check the recovery scripts are embedded
+        shell: pwsh
+        run: |
+          $dll = 'src/WinUpgradeDiag.Core/bin/Release/net48/WinUpgradeDiag.Core.dll'
+          $scripts = [Reflection.Assembly]::LoadFrom((Resolve-Path $dll)).GetManifestResourceNames() |
+                     Where-Object { $_ -like '*.Scripts.*.ps1' }
+          if ($scripts.Count -lt 12) {
+              throw "Expected 12 embedded recovery scripts, found $($scripts.Count)."
+          }
+          Write-Host "$($scripts.Count) recovery scripts embedded."
+
+      - name: Upload the build for download
+        uses: actions/upload-artifact@v4
+        with:
+          name: WinUpgradeDiag-${{ github.sha }}
+          path: src/WinUpgradeDiag.App/bin/Release/net48/WinUpgradeDiag.exe
+          if-no-files-found: error
+          retention-days: 30

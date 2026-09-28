@@ -1,0 +1,107 @@
+name: Release
+
+# Publishes a downloadable WinUpgradeDiag.exe against a version tag.
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# or run it by hand from the Actions tab.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag to publish, e.g. v0.1.0'
+        required: true
+
+permissions:
+  contents: write          # needed to create the release and attach the binary
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build (Release)
+        run: dotnet build WinUpgradeDiag.sln -c Release --nologo
+
+      - name: Test
+        # A binary that ships without its tests having passed is not a release.
+        run: dotnet test tests/WinUpgradeDiag.Tests/WinUpgradeDiag.Tests.csproj -c Release --nologo
+
+      - name: Verify the binary is self-contained
+        shell: pwsh
+        run: |
+          $exe = 'src/WinUpgradeDiag.App/bin/Release/net48/WinUpgradeDiag.exe'
+          $resources = [Reflection.Assembly]::LoadFrom((Resolve-Path $exe)).GetManifestResourceNames()
+          if ($resources -notcontains 'WinUpgradeDiag.App.Dependencies.WinUpgradeDiag.Core.dll') {
+              throw 'The Core assembly is not embedded; this build would need a DLL beside it.'
+          }
+
+      - name: Stage the artifact and record its hash
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item 'src/WinUpgradeDiag.App/bin/Release/net48/WinUpgradeDiag.exe' dist/
+
+          # The hash is what the endpoint security team allow-lists, so it belongs beside the
+          # download rather than in a separate email.
+          $hash = (Get-FileHash dist/WinUpgradeDiag.exe -Algorithm SHA256).Hash
+          $size = [math]::Round((Get-Item dist/WinUpgradeDiag.exe).Length / 1KB)
+          "$hash  WinUpgradeDiag.exe" | Set-Content dist/WinUpgradeDiag.exe.sha256
+
+          "SHA256=$hash" | Out-File -Append $env:GITHUB_ENV
+          "SIZE=$size"   | Out-File -Append $env:GITHUB_ENV
+          Write-Host "SHA-256: $hash  ($size KB)"
+
+      - name: Write the release notes
+        shell: pwsh
+        run: |
+          # Single-quoted here-string: PowerShell treats a backtick as an escape character, so a
+          # double-quoted one would eat the markdown code fences. Placeholders are substituted
+          # afterwards rather than interpolated.
+          $notes = @'
+          Single self-contained `WinUpgradeDiag.exe` (__SIZE__ KB). The Core assembly and all 12
+          recovery scripts are embedded, so nothing else needs to be copied alongside it.
+
+          **SHA-256**
+
+          ```
+          __SHA256__
+          ```
+
+          ## Requirements on the target machine
+
+          | | |
+          | --- | --- |
+          | .NET Framework | 4.8 — in-box on Windows 10 1903+ and Windows 11. Windows 10 1809 and earlier need it installed. |
+          | Privileges | Runs unelevated; the protected Setup logs under `$WINDOWS.~BT` need administrator. |
+          | Network | None. The tool makes no outbound connection of any kind. |
+
+          ## Before deploying
+
+          This binary is **not code-signed**. Sign it with your organisation's internal certificate
+          and allow-list the resulting hash with your endpoint security team before any pilot.
+
+          Distribute it through ConfigMgr or an internal share rather than having technicians
+          download executables from GitHub onto managed endpoints — see `docs/SECURITY.md`.
+          '@
+
+          $notes = $notes.Replace('__SHA256__', $env:SHA256).Replace('__SIZE__', $env:SIZE)
+          Set-Content -Path dist/notes.md -Value $notes -Encoding utf8
+
+      - name: Publish the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ inputs.tag }}'
+          if (-not $tag) { $tag = '${{ github.ref_name }}' }
+
+          gh release create $tag `
+            dist/WinUpgradeDiag.exe `
+            dist/WinUpgradeDiag.exe.sha256 `
+            --title "WinUpgradeDiag $tag" `
+            --notes-file dist/notes.md

@@ -46,6 +46,31 @@ tests/WinUpgradeDiag.Tests/  xUnit tests + fixture logs in tests/fixtures/
 docs/
 ```
 
+## Getting a built copy
+
+The repository holds source, not binaries. To produce a downloadable `WinUpgradeDiag.exe`:
+
+**Tag a release.** Pushing a `v*` tag builds, tests, and publishes the exe with its SHA-256 as a
+GitHub release asset:
+
+```
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Or run the **Release** workflow by hand from the Actions tab and give it a tag name.
+
+**Every push** also builds and attaches the exe as a workflow artifact under Actions, which is
+enough for testing without cutting a release. Artifacts expire after 30 days; release assets do not.
+
+**Or build it locally** — the output is one file:
+
+```
+dotnet build WinUpgradeDiag.sln -c Release
+src\WinUpgradeDiag.Appin\Release
+et48\WinUpgradeDiag.exe
+```
+
 ## Deploying to a problem machine
 
 The build produces **one file**: `WinUpgradeDiag.exe` (about 400 KB). The Core assembly and all 12
