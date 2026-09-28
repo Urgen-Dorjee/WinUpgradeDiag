@@ -24,7 +24,13 @@ namespace WinUpgradeDiag.Core.Remediation
         BlockedMissingParameter,
 
         /// <summary>The session is not elevated and the script needs it.</summary>
-        BlockedNotElevated
+        BlockedNotElevated,
+
+        /// <summary>
+        /// The machine is not in a state where this tool makes sense — nothing to reclaim, or an
+        /// upgrade that rolled back rather than succeeded.
+        /// </summary>
+        BlockedPrecondition
     }
 
     /// <summary>Outcome of the checks run immediately before launching a tool.</summary>
@@ -136,6 +142,17 @@ namespace WinUpgradeDiag.Core.Remediation
                     PreflightResult.BlockedMissingParameter,
                     tool.ParameterPrompt + " is required before this can run.",
                     scriptPath, observations);
+            }
+
+            // The tool's own conditions come before elevation, deliberately. If there is nothing
+            // to reclaim on this machine, "restart as administrator" is useless advice for an
+            // action that would do nothing anyway — and this is the cheapest guard against a
+            // mis-click: where the action makes no sense, it simply cannot run.
+            var precondition = ToolPreconditions.Check(tool);
+            if (!precondition.Satisfied)
+            {
+                return new PreflightReport(
+                    PreflightResult.BlockedPrecondition, precondition.Reason, scriptPath, observations);
             }
 
             if (tool.Risk != RemediationRisk.ReadOnly && !IsElevated())

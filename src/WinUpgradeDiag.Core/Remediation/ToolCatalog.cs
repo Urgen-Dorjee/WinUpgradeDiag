@@ -25,7 +25,8 @@ namespace WinUpgradeDiag.Core.Remediation
             bool requiresLocalMachine = true,
             string parameterExample = null,
             string parameterHelp = null,
-            bool runsUntilStopped = false)
+            bool runsUntilStopped = false,
+            string acknowledgement = null)
         {
             Id = id;
             ScriptName = scriptName;
@@ -41,6 +42,7 @@ namespace WinUpgradeDiag.Core.Remediation
             ParameterExample = parameterExample;
             ParameterHelp = parameterHelp;
             RunsUntilStopped = runsUntilStopped;
+            Acknowledgement = acknowledgement;
         }
 
         public string Id { get; }
@@ -113,6 +115,18 @@ namespace WinUpgradeDiag.Core.Remediation
         /// would sit on it until the timeout expired and then kill it, which looks like a hang.
         /// </summary>
         public bool RunsUntilStopped { get; }
+
+        /// <summary>
+        /// A statement the operator must tick before the action can run, or null.
+        /// <para>
+        /// Used where typing the script name is not enough on its own — retiring a rollback depends
+        /// on a fact the tool cannot observe, namely that someone has actually checked the machine
+        /// works. Making that an explicit claim is the difference between a warning and a decision.
+        /// </para>
+        /// </summary>
+        public string Acknowledgement { get; }
+
+        public bool RequiresAcknowledgement => !string.IsNullOrWhiteSpace(Acknowledgement);
 
         /// <summary>Destructive actions require the operator to type a confirmation word.</summary>
         public bool RequiresTypedConfirmation => Risk == RemediationRisk.Destructive;
@@ -292,8 +306,13 @@ namespace WinUpgradeDiag.Core.Remediation
                 {
                     "The user must have confirmed the upgraded machine is working.",
                     "\"Go back\" will no longer be available afterwards. This cannot be undone.",
+                    "C:\\Windows.old must exist — without it there is nothing to reclaim.",
+                    "This machine must have upgraded successfully, not rolled back.",
                     "Windows removes Windows.old by itself ten days after an upgrade, so this is often unnecessary."
-                })
+                },
+                acknowledgement:
+                    "I have confirmed with the user that this machine is working correctly after the upgrade, " +
+                    "and that they will not need to roll back.")
         };
 
         public static ToolDefinition ById(string id)

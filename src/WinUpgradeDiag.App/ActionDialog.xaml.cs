@@ -29,6 +29,7 @@ namespace WinUpgradeDiag.App
     public partial class ActionDialog : Window
     {
         private string _expectedConfirmation;
+        private bool _needsAcknowledgement;
 
         private ActionDialog()
         {
@@ -50,17 +51,50 @@ namespace WinUpgradeDiag.App
             UpdateMatchState();
         }
 
+        private void Acknowledge_Changed(object sender, RoutedEventArgs e)
+        {
+            UpdateMatchState();
+        }
+
+        /// <summary>
+        /// Requires the operator to tick a specific statement before proceeding. Used where the
+        /// decision rests on something the tool cannot check for itself — whether a person has
+        /// actually confirmed the machine works. Making that an explicit claim turns a warning,
+        /// which is read past, into a decision, which is made.
+        /// </summary>
+        private void RequireAcknowledgement(string statement)
+        {
+            _needsAcknowledgement = true;
+            AcknowledgeText.Text = statement;
+            AcknowledgePanel.Visibility = Visibility.Visible;
+            UpdateMatchState();
+        }
+
+        private bool Acknowledged => !_needsAcknowledgement || AcknowledgeCheck.IsChecked == true;
+
         private void UpdateMatchState()
         {
             var typed = ConfirmInput.Text?.Trim() ?? string.Empty;
-            var matches = string.Equals(typed, _expectedConfirmation, StringComparison.OrdinalIgnoreCase);
+            var matches = _expectedConfirmation == null ||
+                          string.Equals(typed, _expectedConfirmation, StringComparison.OrdinalIgnoreCase);
 
-            PrimaryButton.IsEnabled = matches;
+            // Both gates must pass: the script name typed AND the statement ticked.
+            PrimaryButton.IsEnabled = matches && Acknowledged;
+
+            if (_expectedConfirmation == null)
+            {
+                return;
+            }
 
             if (typed.Length == 0)
             {
                 MatchText.Text = "Type the script name above to enable the button.";
                 MatchText.Foreground = Brush("Ink500");
+            }
+            else if (matches && !Acknowledged)
+            {
+                MatchText.Text = "Name matches. Tick the statement above to enable the button.";
+                MatchText.Foreground = Brush("WarningFg");
             }
             else if (matches)
             {
@@ -167,15 +201,25 @@ namespace WinUpgradeDiag.App
             string command,
             string primaryLabel,
             string typedConfirmation = null,
-            string footerNote = null)
+            string footerNote = null,
+            string acknowledgement = null)
         {
             var dialog = Build(owner, kind, title, body, steps, conditions, command, footerNote);
             dialog.PrimaryButton.Content = primaryLabel ?? "Run it";
+
+            if (!string.IsNullOrWhiteSpace(acknowledgement))
+            {
+                dialog.RequireAcknowledgement(acknowledgement);
+            }
 
             if (!string.IsNullOrWhiteSpace(typedConfirmation))
             {
                 dialog.RequireTypedConfirmation(typedConfirmation);
                 dialog.ConfirmInput.Focus();
+            }
+            else if (!string.IsNullOrWhiteSpace(acknowledgement))
+            {
+                dialog.UpdateMatchState();
             }
 
             return dialog.ShowDialog() == true;

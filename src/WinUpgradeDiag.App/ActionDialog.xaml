@@ -109,6 +109,18 @@
                     </StackPanel>
                 </Border>
 
+                <!-- An explicit claim the operator has to make, where the decision rests on a fact
+                     the tool cannot observe for itself. -->
+                <Border x:Name="AcknowledgePanel" Margin="52,16,0,0" Padding="13" CornerRadius="5"
+                        Background="{StaticResource CriticalBg}" BorderBrush="{StaticResource CriticalLine}"
+                        BorderThickness="1" Visibility="Collapsed">
+                    <CheckBox x:Name="AcknowledgeCheck" Margin="0"
+                              Foreground="{StaticResource Ink900}" FontWeight="SemiBold"
+                              Checked="Acknowledge_Changed" Unchecked="Acknowledge_Changed">
+                        <TextBlock x:Name="AcknowledgeText" TextWrapping="Wrap" MaxWidth="500" />
+                    </CheckBox>
+                </Border>
+
                 <!-- Typed confirmation, for anything that cannot be undone. -->
                 <StackPanel x:Name="ConfirmPanel" Margin="52,18,0,0" Visibility="Collapsed">
                     <TextBlock x:Name="ConfirmPrompt" Style="{StaticResource BodyText}"

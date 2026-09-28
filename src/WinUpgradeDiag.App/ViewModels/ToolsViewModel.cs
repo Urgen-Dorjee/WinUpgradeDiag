@@ -307,9 +307,12 @@ namespace WinUpgradeDiag.App.ViewModels
         /// </summary>
         private static bool Confirm(ToolDefinition tool, string parameterValue)
         {
-            var command = RemediationRunner.BuildArguments(
-                System.IO.Path.Combine("<scripts>", tool.ScriptName), tool, parameterValue);
-            command = "powershell " + command;
+            // Just the script name: Path.Combine rejects a segment containing < or > on .NET
+            // Framework ("Illegal characters in path"), and a placeholder like "<scripts>" threw
+            // before any dialog could appear. The real path is a per-run temp folder anyway, so
+            // showing the bare name is both safe and more honest.
+            var command = "powershell " + RemediationRunner.BuildArguments(
+                tool.ScriptName, tool, parameterValue);
 
             return ActionDialog.Confirm(
                 Application.Current?.MainWindow,
@@ -321,7 +324,8 @@ namespace WinUpgradeDiag.App.ViewModels
                 command,
                 tool.RequiresTypedConfirmation ? "Run it" : "Run " + tool.ScriptName,
                 tool.RequiresTypedConfirmation ? tool.ScriptName : null,
-                "Every run is written to an audit log.");
+                "Every run is written to an audit log.",
+                tool.Acknowledgement);
         }
 
         private void BrowseScriptFolder()
