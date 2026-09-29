@@ -59,6 +59,19 @@ jobs:
             "$cliHash  WinUpgradeDiag.Cli.exe"
           ) | Set-Content dist/SHA256SUMS.txt
 
+          # A zip for a ConfigMgr package source folder. Content delivered by the client never
+          # passes through a browser, so it never gets a Mark of the Web and SmartScreen has
+          # nothing to check — which is the only route that works on a managed endpoint where
+          # policy has removed the "Run anyway" button.
+          Copy-Item docs/DEPLOYMENT.md dist/
+          Compress-Archive -Path `
+            dist/WinUpgradeDiag.Cli.exe, `
+            dist/WinUpgradeDiag.exe, `
+            dist/SHA256SUMS.txt, `
+            dist/DEPLOYMENT.md `
+            -DestinationPath dist/WinUpgradeDiag-ConfigMgr.zip
+          Remove-Item dist/DEPLOYMENT.md
+
           "SHA256=$hash" | Out-File -Append $env:GITHUB_ENV
           "SIZE=$size"   | Out-File -Append $env:GITHUB_ENV
           Write-Host "SHA-256: $hash  ($size KB)"
@@ -77,6 +90,14 @@ jobs:
           | --- | --- |
           | `WinUpgradeDiag.exe` (__SIZE__ KB) | The window. Run it on the affected machine. |
           | `WinUpgradeDiag.Cli.exe` | Console head, for a ConfigMgr Run Script or a remote session. |
+          | `WinUpgradeDiag-ConfigMgr.zip` | Both heads plus deployment notes, for a package source folder. |
+
+          **On a managed endpoint, do not download this with a browser.** A browser download carries
+          a Mark of the Web, SmartScreen checks the reputation of an unsigned binary built minutes
+          ago, and where policy sets "Warn and prevent bypass" there is no Run anyway. Deploy the
+          zip through ConfigMgr instead: the client leaves no Mark of the Web and runs the console
+          head as SYSTEM, which is also what makes the protected Setup logs readable. See
+          `DEPLOYMENT.md` inside the zip.
 
           **SHA-256** — both hashes are in `SHA256SUMS.txt` attached below. The GUI head is:
 
@@ -115,6 +136,7 @@ jobs:
           gh release create $tag `
             dist/WinUpgradeDiag.exe `
             dist/WinUpgradeDiag.Cli.exe `
+            dist/WinUpgradeDiag-ConfigMgr.zip `
             dist/SHA256SUMS.txt `
             --title "WinUpgradeDiag $tag" `
             --notes-file dist/notes.md
