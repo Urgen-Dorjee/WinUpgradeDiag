@@ -1,4 +1,4 @@
-# project context
+# Project context
 
 Read this first. It is the standing context for this repository.
 
