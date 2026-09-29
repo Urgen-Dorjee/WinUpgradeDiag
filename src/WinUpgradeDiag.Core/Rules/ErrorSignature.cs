@@ -19,8 +19,10 @@ namespace WinUpgradeDiag.Core.Rules
             string meaning,
             string action,
             string command = null,
-            IReadOnlyList<LogSourceCategory> appliesTo = null)
+            IReadOnlyList<LogSourceCategory> appliesTo = null,
+            IReadOnlyList<string> corroborate = null)
         {
+            Corroborate = corroborate ?? new List<string>();
             RuleId = ruleId;
             Pattern = pattern;
             Title = title;
@@ -55,10 +57,35 @@ namespace WinUpgradeDiag.Core.Rules
         /// </summary>
         public IReadOnlyList<LogSourceCategory> AppliesTo { get; }
 
+        /// <summary>
+        /// Words that must also appear on the matching line for the signature's meaning to hold.
+        /// Empty means the code alone is enough.
+        /// <para>
+        /// Category scoping is not always enough on its own. 0x80070002 is ERROR_FILE_NOT_FOUND,
+        /// and in smsts.log it genuinely does mean missing content — but it is also what a failed
+        /// registry read returns. A real report told a technician to clear the ConfigMgr content
+        /// cache on the strength of "GetTsRegValue() is unsuccessful. 0x80070002", which is a
+        /// registry call and says nothing whatever about content on disk.
+        /// </para>
+        /// </summary>
+        public IReadOnlyList<string> Corroborate { get; }
+
         /// <summary>Whether this signature's meaning holds for a log of the given category.</summary>
         public bool Covers(LogSourceCategory category)
         {
             return AppliesTo.Count == 0 || AppliesTo.Contains(category);
+        }
+
+        /// <summary>Whether a line that contains the pattern also supports the claimed meaning.</summary>
+        public bool Corroborated(string line)
+        {
+            if (Corroborate.Count == 0)
+            {
+                return true;
+            }
+
+            return line != null && Corroborate.Any(
+                word => line.IndexOf(word, System.StringComparison.OrdinalIgnoreCase) >= 0);
         }
     }
 
@@ -109,7 +136,17 @@ namespace WinUpgradeDiag.Core.Rules
                 Severity.Warning, Confidence.Medium,
                 "A file or folder the task sequence expected was not found. This usually means a cache record points at content that was deleted by hand.",
                 "Clear the stale cache records from the ConfigMgr client and let it download the content again.",
-                appliesTo: new[] { LogSourceCategory.TaskSequence, LogSourceCategory.ClientOther }),
+                appliesTo: new[] { LogSourceCategory.TaskSequence, LogSourceCategory.ClientOther },
+                // The bare code is also what a failed registry read returns; require the line to
+                // be about content before telling anyone to clear the content cache.
+                // Deliberately narrow. "package" and "path" both appear in registry lines about the
+                // task sequence package key, which is how a registry delete failure was reported as
+                // missing content on disk.
+                corroborate: new[]
+                {
+                    "content", "ccmcache", "download", "cache location", "source path",
+                    "file not found", "could not find file", "directory", "folder"
+                }),
 
             new ErrorSignature(
                 "TS-004", "0x80004005",
@@ -117,7 +154,16 @@ namespace WinUpgradeDiag.Core.Rules
                 Severity.Warning, Confidence.Low,
                 "0x80004005 is an unspecified failure. On its own it names nothing; it matters when it lands on the same step as a crash or driver failure.",
                 "Identify the step that returned it in smsts.log, then look at that step's own installer log.",
-                appliesTo: new[] { LogSourceCategory.TaskSequence }),
+                appliesTo: new[] { LogSourceCategory.TaskSequence },
+                // "Unable to load profiler: 0x80004005" is logged by the client on startup and has
+                // nothing to do with a failed step. Require the line to be about one.
+                // "install" alone matches the component name InstallSoftware on the client's
+                // startup chatter, which is not a step failure at all.
+                corroborate: new[]
+                {
+                    "failed to run", "the action", "instruction", "step ", "return code",
+                    "exit code", "execution failed", "smsswd", "tsmanager", "failed to execute"
+                }),
 
             // --- Bugchecks --------------------------------------------------------------------
             new ErrorSignature(

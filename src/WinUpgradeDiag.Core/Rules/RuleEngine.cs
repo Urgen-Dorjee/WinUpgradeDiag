@@ -34,6 +34,7 @@ namespace WinUpgradeDiag.Core.Rules
             new[] { "TSManager", "SetupHost", "setupprep" };
 
         private readonly LogSearcher _searcher = new LogSearcher();
+        private readonly SetupFailureAnalyzer _setupFailures = new SetupFailureAnalyzer();
 
         public Verdict Evaluate(
             DiagnosticContext context,
@@ -57,6 +58,12 @@ namespace WinUpgradeDiag.Core.Rules
             findings.AddRange(EvaluateCache(state));
             findings.AddRange(EvaluateMachineState(state));
             findings.AddRange(ScanLogs(context, progress, cancellationToken));
+
+            // Setup's own account of what went wrong. The signature catalogue matches fixed
+            // strings and finds nothing when a real rollback does not happen to contain one of
+            // them, which is how a report came back having read 477 MB of Setup logs and quoted a
+            // line from none of them.
+            findings.AddRange(_setupFailures.Analyze(context, progress, cancellationToken));
 
             var ranked = Rank(findings);
 
@@ -548,6 +555,16 @@ namespace WinUpgradeDiag.Core.Rules
                 .Select(g => g.First())
                 .ToList();
 
+            // The failure under investigation is dated by the newest Setup log; anything much
+            // older than that belongs to a previous attempt.
+            var newestSetupWrite = context.Manifest
+                .Where(m => m.Exists && m.LastWriteTimeUtc.HasValue &&
+                            (m.Source.Category == LogSourceCategory.SetupRollback ||
+                             m.Source.Category == LogSourceCategory.SetupCurrent))
+                .Select(m => (DateTime?)m.LastWriteTimeUtc.Value)
+                .OrderByDescending(d => d)
+                .FirstOrDefault();
+
             foreach (var target in targets)
             {
                 if (cancellationToken.IsCancellationRequested)
@@ -595,21 +612,47 @@ namespace WinUpgradeDiag.Core.Rules
                         continue;
                     }
 
-                    var evidence = hits.Matches
+                    // The code has to appear on a line that supports what the signature claims.
+                    var supported = hits.Matches
+                        .Where(m => signature.Corroborated(m.Text))
+                        .ToList();
+
+                    if (supported.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    var evidence = supported
                         .Take(3)
                         .Select(m => new Evidence(target.ResolvedPath, m.LineNumber, m.Text.Trim()))
                         .ToList();
 
                     var title = signature.Title;
-                    if (hits.Matches.Count > 1)
+                    if (supported.Count > 1)
                     {
-                        title += " (" + hits.Matches.Count.ToString("N0", CultureInfo.CurrentCulture) +
+                        title += " (" + supported.Count.ToString("N0", CultureInfo.CurrentCulture) +
                                  (hits.MatchLimitReached ? "+" : "") + " occurrences)";
                     }
 
+                    // A log last written long before the failure describes a different attempt.
+                    // The report quoted 2024 task sequence logs beside a 2026 rollback with nothing
+                    // to say they were two years apart.
+                    var severity = signature.Severity;
+                    var confidence = signature.Confidence;
+                    var meaning = signature.Meaning;
+                    var age = StaleBy(target, newestSetupWrite);
+                    if (age != null)
+                    {
+                        title += " — from a log written " + age;
+                        meaning += " This log was last written " + age + ", so it describes an earlier " +
+                                   "attempt rather than the failure being investigated.";
+                        severity = Severity.Info;
+                        confidence = Confidence.Low;
+                    }
+
                     findings.Add(new Finding(
-                        signature.RuleId, title, signature.Severity, signature.Confidence,
-                        signature.Meaning, signature.Action, evidence, signature.Command));
+                        signature.RuleId, title, severity, confidence,
+                        meaning, signature.Action, evidence, signature.Command));
                 }
             }
 
@@ -642,10 +685,36 @@ namespace WinUpgradeDiag.Core.Rules
                 .Select(g => g.First())
                 .OrderByDescending(f => f.Id == "TS-002" ? 1 : 0)
                 .ThenByDescending(f => f.Id.StartsWith("HW-", StringComparison.Ordinal) ? 1 : 0)
+                // Setup quoting its own failure outranks anything inferred from state. "The
+                // Rollback folder exists, so a rollback happened" is a restatement of what the
+                // technician can already see; the error lines say what actually failed.
+                .ThenByDescending(f => f.Id.StartsWith("SU-10", StringComparison.Ordinal) ? 1 : 0)
                 .ThenByDescending(f => (int)f.Severity)
                 .ThenByDescending(f => (int)f.Confidence)
                 .ThenBy(f => f.Id, StringComparer.Ordinal)
                 .ToList();
+        }
+
+        /// <summary>
+        /// How much older this log is than the failure, in words, or null when it is current.
+        /// </summary>
+        private static string StaleBy(Discovery.LogManifestEntry target, DateTime? failureTime)
+        {
+            if (!failureTime.HasValue || !target.LastWriteTimeUtc.HasValue)
+            {
+                return null;
+            }
+
+            var days = (failureTime.Value - target.LastWriteTimeUtc.Value).TotalDays;
+            if (days < 30)
+            {
+                return null;
+            }
+
+            var months = (int)Math.Round(days / 30.44);
+            return months < 12
+                ? months.ToString(CultureInfo.CurrentCulture) + " months before the failure"
+                : (months / 12).ToString(CultureInfo.CurrentCulture) + "+ years before the failure";
         }
 
         private static IReadOnlyList<string> CollectGaps(DiagnosticContext context, SystemState state)
