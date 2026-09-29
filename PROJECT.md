@@ -1,4 +1,4 @@
-# CLAUDE.md — project context
+# project context
 
 Read this first. It is the standing context for this repository.
 
