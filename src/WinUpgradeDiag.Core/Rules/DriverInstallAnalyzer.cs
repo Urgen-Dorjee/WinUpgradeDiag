@@ -155,8 +155,15 @@ namespace WinUpgradeDiag.Core.Rules
                 return null;
             }
 
+            // A driver being uninstalled is not a driver failing to start. On a healthy machine
+            // the recent end of this log is mostly SetupUninstallOEMInf sections failing with
+            // "cannot find the path" as Windows tidies packages that are already gone, and six
+            // rows of that crowd out the one device install that actually failed.
+            var installs = failures.Where(f => IsDeviceInstall(f.Section)).ToList();
+            var chosen = installs.Count > 0 ? installs : failures;
+
             // Newest last in the file; the most recent failures are the ones that matter.
-            var reported = failures
+            var reported = chosen
                 .AsEnumerable()
                 .Reverse()
                 .GroupBy(f => f.Section, StringComparer.OrdinalIgnoreCase)
@@ -224,6 +231,30 @@ namespace WinUpgradeDiag.Core.Rules
                 meaning,
                 action,
                 evidence);
+        }
+
+        /// <summary>
+        /// Whether a section describes a device or driver being installed, as opposed to removed.
+        /// An uninstall that fails because the package is already gone says nothing about why an
+        /// upgrade rolled back.
+        /// </summary>
+        public static bool IsDeviceInstall(string section)
+        {
+            if (string.IsNullOrWhiteSpace(section))
+            {
+                return false;
+            }
+
+            if (section.IndexOf("uninstall", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                section.IndexOf("Delete", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return false;
+            }
+
+            return section.IndexOf("Device Install", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   section.IndexOf("Driver Install", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   section.IndexOf("Device Start", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   section.IndexOf("DiInstallDriver", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static string Trim(string line)

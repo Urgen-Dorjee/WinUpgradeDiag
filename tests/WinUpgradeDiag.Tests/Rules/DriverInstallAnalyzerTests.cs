@@ -158,6 +158,68 @@ namespace WinUpgradeDiag.Tests.Rules
             }
         }
 
+        /// <summary>
+        /// Running this against a real machine's setupapi.dev.log returned six rows of
+        /// SetupUninstallOEMInf failing with "cannot find the path specified" — Windows tidying
+        /// packages that were already gone. That is normal housekeeping, and it crowded out the
+        /// device install anyone would care about.
+        /// </summary>
+        [Fact]
+        public void Uninstall_housekeeping_does_not_crowd_out_a_real_device_failure()
+        {
+            const string uninstallNoise =
+                ">>>  [SetupUninstallOEMInf - oem126.inf]\r\n" +
+                ">>>  Section start 2026/09/25 22:30:00.000\r\n" +
+                "!!!  inf: Error 3: The system cannot find the path specified.\r\n" +
+                "<<<  [Exit status: FAILURE(0x00000003)]\r\n";
+
+            using (var tmp = new TempDirectory())
+            {
+                // The noise comes after the real failure, so "newest first" would surface it.
+                var path = tmp.File(
+                    Path.Combine("INF", "setupapi.dev.log"),
+                    FailedDeviceInstall + string.Concat(Enumerable.Repeat(uninstallNoise, 6)));
+
+                var finding = Run(ContextFor(
+                    Entry(path, LogSourceCategory.SetupCurrent, "setupapi.dev.log"))).Single();
+
+                Assert.Contains("PCI\\VEN_10EC", finding.Meaning, StringComparison.Ordinal);
+
+                var quoted = string.Join("\n", finding.Evidence.Select(e => e.Text));
+                Assert.DoesNotContain("SetupUninstallOEMInf", quoted, StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        [Theory]
+        [InlineData("Device Install (Hardware initiated) - PCI\\VEN_10EC&DEV_8168", true)]
+        [InlineData("Device Install (DiInstallDriver) - C:\\WINDOWS\\INF\\oem47.inf", true)]
+        [InlineData("SetupUninstallOEMInf - oem126.inf", false)]
+        [InlineData("Delete Device - SWD\\PRINTENUM", false)]
+        public void Install_sections_are_told_apart_from_removals(string section, bool isInstall)
+        {
+            Assert.Equal(isInstall, DriverInstallAnalyzer.IsDeviceInstall(section));
+        }
+
+        /// <summary>
+        /// When a log holds nothing but uninstall housekeeping there is still no reason to stay
+        /// silent — reporting it is better than reporting nothing, it just must not outrank a
+        /// real device failure.
+        /// </summary>
+        [Fact]
+        public void Housekeeping_alone_is_still_reported()
+        {
+            using (var tmp = new TempDirectory())
+            {
+                var path = tmp.File(Path.Combine("INF", "setupapi.dev.log"),
+                    ">>>  [SetupUninstallOEMInf - oem126.inf]\r\n" +
+                    "!!!  inf: Error 3: The system cannot find the path specified.\r\n" +
+                    "<<<  [Exit status: FAILURE(0x00000003)]\r\n");
+
+                Assert.Single(Run(ContextFor(
+                    Entry(path, LogSourceCategory.SetupCurrent, "setupapi.dev.log"))));
+            }
+        }
+
         [Fact]
         public void An_unreadable_log_is_skipped_rather_than_crashing_the_run()
         {

@@ -68,9 +68,17 @@ jobs:
           # nothing to check — which is the only route that works on a managed endpoint where
           # policy has removed the "Run anyway" button.
           Copy-Item docs/DEPLOYMENT.md dist/
+
+          # The script head goes out on its own as well. Where application control blocks
+          # unsigned executables outright, this is the only thing that runs at all — WDAC and
+          # AppLocker enforce on .exe by publisher, path or hash, and script rules are commonly
+          # audit-only or path-allowed.
+          Copy-Item Script/Get-UpgradeFailure.ps1 dist/
+
           Compress-Archive -Path `
             dist/WinUpgradeDiag.Cli.exe, `
             dist/WinUpgradeDiag.exe, `
+            dist/Get-UpgradeFailure.ps1, `
             dist/SHA256SUMS.txt, `
             dist/DEPLOYMENT.md `
             -DestinationPath dist/WinUpgradeDiag-ConfigMgr.zip
@@ -138,6 +146,7 @@ jobs:
           | `WinUpgradeDiag.exe` (__SIZE__ KB) | The window. Run it on the affected machine. |
           | `WinUpgradeDiag.Cli.exe` | Console head, for a ConfigMgr Run Script or a remote session. |
           | `WinUpgradeDiag-ConfigMgr.zip` | Both heads plus deployment notes, for a package source folder. |
+          | `Get-UpgradeFailure.ps1` | Script head. The one that runs where application control blocks executables. |
 
           **On a managed endpoint, do not download this with a browser.** A browser download carries
           a Mark of the Web, SmartScreen checks the reputation of an unsigned binary built minutes
@@ -186,6 +195,7 @@ jobs:
             dist/WinUpgradeDiag.exe `
             dist/WinUpgradeDiag.Cli.exe `
             dist/WinUpgradeDiag-ConfigMgr.zip `
+            dist/Get-UpgradeFailure.ps1 `
             dist/SHA256SUMS.txt `
             --title "WinUpgradeDiag $tag" `
             --notes-file dist/notes.md
