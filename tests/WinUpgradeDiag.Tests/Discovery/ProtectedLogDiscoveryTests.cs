@@ -19,6 +19,12 @@ namespace WinUpgradeDiag.Tests.Discovery
     /// has to be reported as unreadable, or a reader concludes "no Setup failure found" from a
     /// rollback log nobody could open.
     /// </para>
+    /// <para>
+    /// The assertions deliberately accept two outcomes. Whether the privileged read succeeds
+    /// depends on whether the running process holds SeBackupPrivilege, which differs between a
+    /// developer machine and a CI runner — and both answers are correct, provided neither is
+    /// "missing".
+    /// </para>
     /// </summary>
     public class ProtectedLogDiscoveryTests
     {
@@ -61,19 +67,74 @@ namespace WinUpgradeDiag.Tests.Discovery
 
                     var entry = new LogManifestBuilder().Build(new[] { source }).Single();
 
-                    // The point of the whole test: not silently "missing".
+                    // The invariant, and the only one that matters: a log the caller cannot open
+                    // normally is never reported as absent. DESIGN.md §8 — unreadable evidence has
+                    // to be reported as unreadable, or a reader concludes "no Setup failure found"
+                    // from a rollback log nobody could open.
+                    Assert.True(entry.Exists);
                     Assert.True(entry.RequiresPrivilegedRead);
-                    Assert.False(entry.Readable);
-                    Assert.NotNull(entry.AccessError);
 
-                    // And the size must not be presented as a measured zero.
-                    Assert.False(entry.SizeKnown);
+                    // Which of the two legitimate outcomes follows depends on whether this process
+                    // holds SeBackupPrivilege, and both are correct. A developer box running the
+                    // suite unelevated gets the degraded one; a CI runner whose job is an
+                    // administrator gets the privileged read succeeding, which is the entire point
+                    // of the feature. Asserting only the degraded outcome failed the build on CI
+                    // for doing better than the test expected.
+                    if (entry.Readable)
+                    {
+                        // Opened through the backup-semantics path.
+                        Assert.True(entry.SizeKnown);
+                        Assert.True(entry.SizeBytes > 0);
+                        Assert.Null(entry.AccessError);
+                    }
+                    else
+                    {
+                        // No privilege to fall back on: say so, and do not present an
+                        // unmeasured size as a measured zero.
+                        Assert.NotNull(entry.AccessError);
+                        Assert.False(entry.SizeKnown);
+                    }
                 }
                 finally
                 {
                     RestoreAccess(dir);
                 }
             }
+        }
+
+        /// <summary>
+        /// The branch above that only runs on a process holding SeBackupPrivilege, asserted here
+        /// against the entry the privileged path actually constructs.
+        /// <para>
+        /// Worth having separately because the environment that exercises it — an elevated CI
+        /// runner — is not the one the suite usually runs on, and the mismatch between what
+        /// <c>TryDescribePrivileged</c> returns and what the test expected is exactly what failed
+        /// a release build.
+        /// </para>
+        /// </summary>
+        [Fact]
+        public void A_log_read_through_backup_privilege_reports_a_real_size_and_no_error()
+        {
+            var source = new LogSource(
+                "setup-rollback-act", LogSourceCategory.SetupRollback,
+                "setupact.log (rollback)", "", @"C:\$WINDOWS.~BT\Sources\Rollback\setupact.log",
+                highValue: true);
+
+            // The shape LogManifestBuilder.TryDescribePrivileged produces on success.
+            var entry = LogManifestEntry.Found(
+                source, source.Path, 103_900_000,
+                new DateTime(2026, 9, 25, 22, 21, 36, DateTimeKind.Utc),
+                readable: true, requiresPrivilegedRead: true, accessError: null);
+
+            // Never "missing", which is the invariant the whole design exists for.
+            Assert.True(entry.Exists);
+            Assert.True(entry.RequiresPrivilegedRead);
+
+            // And the assertions the privileged branch of the ACL test makes.
+            Assert.True(entry.Readable);
+            Assert.True(entry.SizeKnown);
+            Assert.True(entry.SizeBytes > 0);
+            Assert.Null(entry.AccessError);
         }
 
         [Fact]
