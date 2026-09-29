@@ -30,6 +30,16 @@ namespace WinUpgradeDiag.Core.Collect
         public CcmCacheSnapshot CcmCache { get; set; }
         public IReadOnlyList<StorageHealthInfo> StorageHealth { get; set; }
         public IReadOnlyList<FilterDriverInfo> FilterDrivers { get; set; }
+
+        /// <summary>
+        /// Model, BIOS level and firmware mode. Collected because "the same model upgrades fine" is
+        /// the first thing said about every failure, and the differences that matter between two
+        /// machines off the same order are never the model.
+        /// </summary>
+        public MachineIdentityInfo Machine { get; set; }
+
+        /// <summary>Third-party driver packages with their installed versions.</summary>
+        public IReadOnlyList<DriverPackageInfo> DriverPackages { get; set; }
         public IReadOnlyList<EventRecordInfo> Events { get; set; }
 
         /// <summary>Anything a collector could not read. Surfaced, never swallowed.</summary>

@@ -428,6 +428,9 @@ namespace WinUpgradeDiag.Core.Report
         private static void WriteSystem(StringBuilder sb, SystemState s0, Func<string, string> r)
         {
             sb.AppendLine("<h2 id=\"system\">System state</h2><table>");
+            Row(sb, "Machine", s0.Machine?.Describe());
+            Row(sb, "BIOS", s0.Machine == null ? null : Bios(s0.Machine));
+            Row(sb, "Firmware", s0.Machine?.FirmwareType);
             Row(sb, "OS", s0.Os?.FullDescription);
             Row(sb, "Edition", s0.Os?.EditionId);
             Row(sb, "Elevated", YesNo(s0.IsElevated));
@@ -462,7 +465,62 @@ namespace WinUpgradeDiag.Core.Report
             sb.AppendLine("</table>");
 
             WriteStorage(sb, s0);
+            WriteDriverPackages(sb, s0);
             WriteFilterDrivers(sb, s0, r);
+        }
+
+        private static string Bios(MachineIdentityInfo machine)
+        {
+            if (string.IsNullOrWhiteSpace(machine.BiosVersion))
+            {
+                return null;
+            }
+
+            return machine.BiosVersion +
+                   (machine.BiosReleaseDate.HasValue
+                       ? "  (" + machine.BiosReleaseDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + ")"
+                       : "");
+        }
+
+        /// <summary>
+        /// Third-party driver packages with the version actually installed.
+        /// <para>
+        /// This table exists for one sentence a technician says about every failure: "the same model
+        /// upgrades fine". It is usually true and usually beside the point. Two machines off the
+        /// same order diverge in BIOS level and driver versions within months, and those are the
+        /// axes an upgrade failure falls on. Printing the versions turns the comparison against a
+        /// machine that worked into a diff rather than an argument.
+        /// </para>
+        /// </summary>
+        private static void WriteDriverPackages(StringBuilder sb, SystemState s0)
+        {
+            var packages = s0.DriverPackages ?? new List<DriverPackageInfo>();
+            if (packages.Count == 0)
+            {
+                return;
+            }
+
+            sb.AppendLine("<h3>Third-party driver packages</h3>");
+            sb.Append("<p class=\"lede\">").Append(packages.Count)
+              .AppendLine(" package(s) Windows did not ship, with the version installed on this machine. " +
+                          "If the same model upgrades successfully elsewhere, this table and the BIOS level above " +
+                          "are where the two machines differ — compare them against a report from one that worked " +
+                          "before looking anywhere else. The published name is what " +
+                          "<code>pnputil /delete-driver</code> takes.</p>");
+
+            sb.AppendLine("<table><tr><th>Published</th><th>Vendor</th><th>Class</th><th>Version</th>" +
+                          "<th>Driver date</th><th>Device</th></tr>");
+            foreach (var p in packages)
+            {
+                sb.Append("<tr><td class=\"path\">").Append(E(p.PublishedName))
+                  .Append("</td><td>").Append(E(p.Provider))
+                  .Append("</td><td>").Append(E(p.DeviceClass))
+                  .Append("</td><td>").Append(E(p.Version))
+                  .Append("</td><td>").Append(E(p.DriverDate.HasValue
+                      ? p.DriverDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : null))
+                  .Append("</td><td>").Append(E(p.DeviceName)).AppendLine("</td></tr>");
+            }
+            sb.AppendLine("</table>");
         }
 
         private static void WriteStorage(StringBuilder sb, SystemState s0)

@@ -76,6 +76,13 @@ namespace WinUpgradeDiag.Core.Collect
 
             Step(state, progress, cancellationToken, "Listing filter drivers", () => state.FilterDrivers = new FilterDriverCollector().Collect());
 
+            Step(state, progress, cancellationToken, "Reading model, BIOS and third-party drivers", () =>
+            {
+                var collector = new MachineIdentityCollector();
+                state.Machine = collector.CollectIdentity(state.CollectionErrors);
+                state.DriverPackages = collector.CollectDriverPackages(state.CollectionErrors);
+            });
+
             Step(state, progress, cancellationToken, "Reading System and Application event logs", () =>
             {
                 var events = new EventLogCollector().Collect();
