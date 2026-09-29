@@ -201,22 +201,73 @@ namespace WinUpgradeDiag.Tests.Rules
         }
 
         /// <summary>
-        /// When a log holds nothing but uninstall housekeeping there is still no reason to stay
-        /// silent — reporting it is better than reporting nothing, it just must not outrank a
-        /// real device failure.
+        /// This replaces a test that asserted the opposite, and the original was wrong.
+        /// <para>
+        /// Reasoning that "reporting something beats reporting nothing" produced, on a healthy
+        /// machine, a Cause-identified verdict reading "5 device drivers failed to install" with a
+        /// recommendation to run pnputil /delete-driver - built entirely out of Disk Cleanup
+        /// running cleanmgr /autocleanstoragesense and removing driver packages that were already
+        /// gone. That machine's log held 458 uninstall sections and 8 device installs. Silence is
+        /// the correct output when there is nothing to say.
+        /// </para>
         /// </summary>
         [Fact]
-        public void Housekeeping_alone_is_still_reported()
+        public void Uninstall_housekeeping_alone_reports_nothing()
         {
             using (var tmp = new TempDirectory())
             {
-                var path = tmp.File(Path.Combine("INF", "setupapi.dev.log"),
-                    ">>>  [SetupUninstallOEMInf - oem126.inf]\r\n" +
+                var housekeeping = string.Concat(Enumerable.Range(0, 20).Select(i =>
+                    ">>>  [SetupUninstallOEMInf - oem" + (100 + i) + ".inf]\r\n" +
+                    ">>>  Section start 2026/08/13 09:35:19\r\n" +
+                    "      cmd: \"C:\\WINDOWS\\system32\\cleanmgr.exe\" /autocleanstoragesense /d C:\r\n" +
                     "!!!  inf: Error 3: The system cannot find the path specified.\r\n" +
-                    "<<<  [Exit status: FAILURE(0x00000003)]\r\n");
+                    "<<<  [Exit status: FAILURE(0x00000003)]\r\n"));
 
-                Assert.Single(Run(ContextFor(
+                var path = tmp.File(Path.Combine("INF", "setupapi.dev.log"), housekeeping);
+
+                Assert.Empty(Run(ContextFor(
                     Entry(path, LogSourceCategory.SetupCurrent, "setupapi.dev.log"))));
+            }
+        }
+
+        /// <summary>
+        /// A device install that failed six weeks ago did not cause an upgrade to fail today, so it
+        /// must not arrive as Critical with High confidence and become the verdict.
+        /// </summary>
+        [Fact]
+        public void An_old_device_failure_is_demoted_and_labelled()
+        {
+            var longAgo = DateTime.Now.AddDays(-75).ToString("yyyy/MM/dd HH:mm:ss");
+
+            using (var tmp = new TempDirectory())
+            {
+                var path = tmp.File(Path.Combine("INF", "setupapi.dev.log"),
+                    ">>>  [Device Install (Hardware initiated) - PCI\\VEN_10EC&DEV_8168]\r\n" +
+                    ">>>  Section start " + longAgo + "\r\n" +
+                    "!!!  ndv: Device install failed for device\r\n" +
+                    "<<<  [Exit status: FAILURE(0x800f0203)]\r\n");
+
+                var finding = Run(ContextFor(
+                    Entry(path, LogSourceCategory.SetupCurrent, "setupapi.dev.log"))).Single();
+
+                Assert.Equal(Severity.Warning, finding.Severity);
+                Assert.Equal(Confidence.Low, finding.Confidence);
+                Assert.Contains("over a month ago", finding.Title, StringComparison.Ordinal);
+                Assert.Contains("history", finding.Meaning, StringComparison.Ordinal);
+            }
+        }
+
+        [Fact]
+        public void The_evidence_says_when_each_failure_happened()
+        {
+            using (var tmp = new TempDirectory())
+            {
+                var path = tmp.File(Path.Combine("INF", "setupapi.dev.log"), FailedDeviceInstall);
+
+                var finding = Run(ContextFor(
+                    Entry(path, LogSourceCategory.SetupCurrent, "setupapi.dev.log"))).Single();
+
+                Assert.Contains("2026-09-25 22:19:41", finding.Evidence[0].Text, StringComparison.Ordinal);
             }
         }
 

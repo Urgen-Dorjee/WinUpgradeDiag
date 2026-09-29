@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -42,6 +43,11 @@ namespace WinUpgradeDiag.Core.Rules
         private static readonly Regex HardwareId = new Regex(
             @"(?<id>(?:PCI|USB|HDAUDIO|ACPI|SWC|ROOT|HID|BTH)\\[^\s\]]+)",
             RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        /// <summary>Section timestamp: "&gt;&gt;&gt;  Section start 2026/08/13 09:35:19.250".</summary>
+        private static readonly Regex SectionTime = new Regex(
+            @"^>>>\s*Section start\s+(?<when>\d{4}/\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2})",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
         /// <summary>An oem inf, which is what identifies the third-party driver package.</summary>
         private static readonly Regex OemInf = new Regex(
@@ -104,6 +110,7 @@ namespace WinUpgradeDiag.Core.Rules
 
             var failures = new List<DeviceFailure>();
             string currentSection = null;
+            DateTime? currentStarted = null;
             var sectionLines = new List<string>();
 
             foreach (var raw in lines)
@@ -114,13 +121,29 @@ namespace WinUpgradeDiag.Core.Rules
                 if (start.Success)
                 {
                     currentSection = start.Groups["what"].Value.Trim();
+                    currentStarted = null;
                     sectionLines.Clear();
                     continue;
                 }
 
-                if (currentSection != null && sectionLines.Count < 400)
+                if (currentSection != null)
                 {
-                    sectionLines.Add(line);
+                    var when = SectionTime.Match(line);
+                    if (when.Success)
+                    {
+                        DateTime parsed;
+                        if (DateTime.TryParseExact(
+                                when.Groups["when"].Value, "yyyy/MM/dd HH:mm:ss",
+                                CultureInfo.InvariantCulture, DateTimeStyles.None, out parsed))
+                        {
+                            currentStarted = parsed;
+                        }
+                    }
+
+                    if (sectionLines.Count < 400)
+                    {
+                        sectionLines.Add(line);
+                    }
                 }
 
                 var exit = ExitStatus.Match(line);
@@ -140,6 +163,7 @@ namespace WinUpgradeDiag.Core.Rules
                 failures.Add(new DeviceFailure
                 {
                     Section = currentSection,
+                    Started = currentStarted,
                     Code = exit.Groups["code"].Success ? exit.Groups["code"].Value : null,
                     // setupapi marks errors with "!!!" and warnings with "!".
                     Detail = sectionLines.LastOrDefault(l => l.TrimStart().StartsWith("!!!", StringComparison.Ordinal))
@@ -147,6 +171,7 @@ namespace WinUpgradeDiag.Core.Rules
                 });
 
                 currentSection = null;
+                currentStarted = null;
                 sectionLines.Clear();
             }
 
@@ -155,15 +180,18 @@ namespace WinUpgradeDiag.Core.Rules
                 return null;
             }
 
+            // Only device installs, with no fallback.
+            //
             // A driver being uninstalled is not a driver failing to start. On a healthy machine
-            // the recent end of this log is mostly SetupUninstallOEMInf sections failing with
-            // "cannot find the path" as Windows tidies packages that are already gone, and six
-            // rows of that crowd out the one device install that actually failed.
-            var installs = failures.Where(f => IsDeviceInstall(f.Section)).ToList();
-            var chosen = installs.Count > 0 ? installs : failures;
-
-            // Newest last in the file; the most recent failures are the ones that matter.
-            var reported = chosen
+            // this log is overwhelmingly SetupUninstallOEMInf sections failing with "cannot find
+            // the path specified" — Disk Cleanup running cleanmgr /autocleanstoragesense and
+            // removing driver packages that were already gone. This machine had 458 of those and
+            // 8 device installs. Falling back to "report something rather than nothing" turned
+            // that routine housekeeping into "Cause identified: 5 device drivers failed to
+            // install", with a recommendation to run pnputil /delete-driver, on a machine where
+            // nothing was wrong. Silence is the correct output when there is nothing to say.
+            var reported = failures
+                .Where(f => IsDeviceInstall(f.Section))
                 .AsEnumerable()
                 .Reverse()
                 .GroupBy(f => f.Section, StringComparer.OrdinalIgnoreCase)
@@ -171,11 +199,19 @@ namespace WinUpgradeDiag.Core.Rules
                 .Take(MaxReportedDevices)
                 .ToList();
 
+            if (reported.Count == 0)
+            {
+                return null;
+            }
+
             var evidence = new List<Evidence>();
             foreach (var failure in reported)
             {
                 evidence.Add(new Evidence(
                     log.ResolvedPath, null,
+                    (failure.Started.HasValue
+                        ? failure.Started.Value.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + "  "
+                        : "") +
                     "[" + failure.Section + "]" +
                     (failure.Code != null ? "  Exit status: FAILURE(" + failure.Code + ")" : "  Exit status: FAILURE")));
 
@@ -221,13 +257,30 @@ namespace WinUpgradeDiag.Core.Rules
                           " /uninstall removes it so Setup uses the in-box driver instead.";
             }
 
+            // A device install that failed six weeks ago is not why an upgrade failed today.
+            var newest = reported
+                .Where(f => f.Started.HasValue)
+                .Select(f => f.Started.Value)
+                .DefaultIfEmpty(DateTime.MinValue)
+                .Max();
+
+            var stale = newest != DateTime.MinValue && (DateTime.Now - newest).TotalDays > 30;
+            if (stale)
+            {
+                var days = (int)(DateTime.Now - newest).TotalDays;
+                meaning += " The most recent of these was " + days.ToString(CultureInfo.CurrentCulture) +
+                           " days ago, so unless the upgrade attempt is at least that old, this is history " +
+                           "rather than the cause.";
+            }
+
             return new Finding(
                 "DR-100",
-                reported.Count == 1
+                (reported.Count == 1
                     ? "A device driver failed to install"
-                    : reported.Count + " device drivers failed to install",
-                Severity.Critical,
-                Confidence.High,
+                    : reported.Count + " device drivers failed to install") +
+                (stale ? " (over a month ago)" : ""),
+                stale ? Severity.Warning : Severity.Critical,
+                stale ? Confidence.Low : Confidence.High,
                 meaning,
                 action,
                 evidence);
@@ -268,6 +321,9 @@ namespace WinUpgradeDiag.Core.Rules
             public string Section;
             public string Code;
             public string Detail;
+
+            /// <summary>When the section ran, so age can be judged.</summary>
+            public DateTime? Started;
         }
     }
 }
