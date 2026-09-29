@@ -35,6 +35,7 @@ namespace WinUpgradeDiag.Core.Rules
 
         private readonly LogSearcher _searcher = new LogSearcher();
         private readonly SetupFailureAnalyzer _setupFailures = new SetupFailureAnalyzer();
+        private readonly TaskSequenceFailureAnalyzer _taskSequenceFailures = new TaskSequenceFailureAnalyzer();
 
         public Verdict Evaluate(
             DiagnosticContext context,
@@ -64,6 +65,10 @@ namespace WinUpgradeDiag.Core.Rules
             // them, which is how a report came back having read 477 MB of Setup logs and quoted a
             // line from none of them.
             findings.AddRange(_setupFailures.Analyze(context, progress, cancellationToken));
+
+            // Which step failed, and with what. This is the fact on the error dialog the user sees,
+            // and the engine had no concept of it.
+            findings.AddRange(_taskSequenceFailures.Analyze(context, progress, cancellationToken));
 
             var ranked = Rank(findings);
 
@@ -688,7 +693,7 @@ namespace WinUpgradeDiag.Core.Rules
                 // Setup quoting its own failure outranks anything inferred from state. "The
                 // Rollback folder exists, so a rollback happened" is a restatement of what the
                 // technician can already see; the error lines say what actually failed.
-                .ThenByDescending(f => f.Id.StartsWith("SU-10", StringComparison.Ordinal) ? 1 : 0)
+                .ThenByDescending(f => QuotesTheFailure(f.Id) ? 1 : 0)
                 .ThenByDescending(f => (int)f.Severity)
                 .ThenByDescending(f => (int)f.Confidence)
                 .ThenBy(f => f.Id, StringComparer.Ordinal)
@@ -715,6 +720,17 @@ namespace WinUpgradeDiag.Core.Rules
             return months < 12
                 ? months.ToString(CultureInfo.CurrentCulture) + " months before the failure"
                 : (months / 12).ToString(CultureInfo.CurrentCulture) + "+ years before the failure";
+        }
+
+        /// <summary>
+        /// Findings that quote the machine's own account of the failure, rather than inferring one
+        /// from state. "The Rollback folder exists, so a rollback happened" restates what the
+        /// technician can already see; "step X failed with 0x80070002" is the answer.
+        /// </summary>
+        private static bool QuotesTheFailure(string id)
+        {
+            return id.StartsWith("SU-10", StringComparison.Ordinal) ||
+                   id.StartsWith("TS-10", StringComparison.Ordinal);
         }
 
         private static IReadOnlyList<string> CollectGaps(DiagnosticContext context, SystemState state)
