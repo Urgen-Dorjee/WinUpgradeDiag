@@ -63,6 +63,10 @@ namespace WinUpgradeDiag.Core.Discovery
                 "Device/driver install activity during the failed upgrade attempt.",
                 Path.Combine(rollback, "setupapi.dev.log"), highValue: true));
             sources.Add(new LogSource(
+                "setup-current-apilog", LogSourceCategory.SetupCurrent, "setupapi.dev.log (current attempt)",
+                "Device/driver install activity for the attempt in progress.",
+                Path.Combine(pantherCurrent, "setupapi.dev.log"), highValue: true));
+            sources.Add(new LogSource(
                 "setup-rollback-dmp", LogSourceCategory.SetupRollback, "setupmem.dmp (rollback)",
                 "Present only if the machine bugchecked during the upgrade.",
                 Path.Combine(rollback, "setupmem.dmp"), highValue: true));
@@ -71,12 +75,35 @@ namespace WinUpgradeDiag.Core.Discovery
                 "Exported event logs captured at rollback time.",
                 rollback, LogSourceKind.DirectoryGlob, "*.evtx", highValue: true));
 
+            // --- Driver installation, the live record ---
+            //
+            // This is where a PnP watchdog failure is written down, and it was not looked at. The
+            // catalogue knew one setupapi.dev.log, the copy inside the Rollback folder, which is
+            // frequently not there — so on a machine that bugchecked on a driver the tool had no
+            // driver log at all, while the authoritative one sat unread in the INF directory. The
+            // report then told the technician to go and check setupapi.dev.log, a file it had just
+            // listed as not present.
+            var infDir = Path.Combine(windir, "INF");
+            sources.Add(new LogSource(
+                "driver-inf-dev", LogSourceCategory.SetupCurrent, "setupapi.dev.log (device installs)",
+                "Every driver install and start this Windows installation has performed, with the " +
+                "result of each. The record of the driver that stalls during an upgrade.",
+                Path.Combine(infDir, "setupapi.dev.log"), highValue: true));
+            sources.Add(new LogSource(
+                "driver-inf-app", LogSourceCategory.Servicing, "setupapi.app.log (application installs)",
+                "Application-side counterpart to setupapi.dev.log.",
+                Path.Combine(infDir, "setupapi.app.log")));
+
             // --- Windows Setup: completed successfully at some point ---
             var pantherCompleted = Path.Combine(windir, "Panther");
             sources.Add(new LogSource(
                 "setup-completed-act", LogSourceCategory.SetupCompleted, "setupact.log (completed)",
                 "Left behind by a Setup run that finished, successfully or not.",
                 Path.Combine(pantherCompleted, "setupact.log")));
+            sources.Add(new LogSource(
+                "setup-completed-apilog", LogSourceCategory.SetupCompleted, "setupapi.dev.log (completed)",
+                "Driver activity from a Setup run that finished.",
+                Path.Combine(pantherCompleted, "setupapi.dev.log")));
             sources.Add(new LogSource(
                 "setup-completed-err", LogSourceCategory.SetupCompleted, "setuperr.log (completed)",
                 "Errors only, same phase as the completed setupact.log.",

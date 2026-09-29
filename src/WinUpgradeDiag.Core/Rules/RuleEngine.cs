@@ -36,6 +36,7 @@ namespace WinUpgradeDiag.Core.Rules
         private readonly LogSearcher _searcher = new LogSearcher();
         private readonly SetupFailureAnalyzer _setupFailures = new SetupFailureAnalyzer();
         private readonly TaskSequenceFailureAnalyzer _taskSequenceFailures = new TaskSequenceFailureAnalyzer();
+        private readonly DriverInstallAnalyzer _driverInstalls = new DriverInstallAnalyzer();
 
         public Verdict Evaluate(
             DiagnosticContext context,
@@ -69,6 +70,10 @@ namespace WinUpgradeDiag.Core.Rules
             // Which step failed, and with what. This is the fact on the error dialog the user sees,
             // and the engine had no concept of it.
             findings.AddRange(_taskSequenceFailures.Analyze(context, progress, cancellationToken));
+
+            // Which device and driver. This is the answer to a PnP watchdog bugcheck, and the tool
+            // used to recommend reading setupapi.dev.log without knowing where it lives.
+            findings.AddRange(_driverInstalls.Analyze(context, progress, cancellationToken));
 
             var ranked = Rank(findings);
 
@@ -730,7 +735,8 @@ namespace WinUpgradeDiag.Core.Rules
         private static bool QuotesTheFailure(string id)
         {
             return id.StartsWith("SU-10", StringComparison.Ordinal) ||
-                   id.StartsWith("TS-10", StringComparison.Ordinal);
+                   id.StartsWith("TS-10", StringComparison.Ordinal) ||
+                   id.StartsWith("DR-10", StringComparison.Ordinal);
         }
 
         private static IReadOnlyList<string> CollectGaps(DiagnosticContext context, SystemState state)
