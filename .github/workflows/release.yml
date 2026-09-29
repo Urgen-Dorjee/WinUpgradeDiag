@@ -23,6 +23,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The changelog is generated from the commits since the previous tag, and the default
+          # single-commit checkout has no history to read.
+          fetch-depth: 0
 
       - name: Build (Release)
         run: dotnet build WinUpgradeDiag.sln -c Release --nologo
@@ -76,6 +80,43 @@ jobs:
           "SIZE=$size"   | Out-File -Append $env:GITHUB_ENV
           Write-Host "SHA-256: $hash  ($size KB)"
 
+      - name: Build the changelog from the commits since the last release
+        shell: pwsh
+        run: |
+          $tag = '${{ inputs.tag }}'
+          if (-not $tag) { $tag = '${{ github.ref_name }}' }
+
+          # The tag immediately before this one *in history*, not merely the next one down by
+          # version order: re-publishing an older tag would otherwise compare against a newer one
+          # and produce an empty changelog. Errors when there is no earlier tag, which is the
+          # first release.
+          $previous = git describe --tags --abbrev=0 "$tag^" 2>$null
+          if ($LASTEXITCODE -ne 0) { $previous = $null }
+
+          if ($previous) {
+              $range = "$previous..$tag"
+              Write-Host "Changelog range: $range"
+          } else {
+              $range = $tag
+              Write-Host "No previous tag; using the whole history."
+          }
+
+          # Subject lines only. A commit body belongs in the commit, not in a release page.
+          $subjects = git log --no-merges --format=%s $range
+          if (-not $subjects) { $subjects = @() }
+
+          $lines = @($subjects | ForEach-Object { "- $_" })
+          if ($lines.Count -eq 0) { $lines = @("- No changes recorded.") }
+
+          $changelog = ($lines -join "`n")
+          if ($previous) {
+              $repo = "${{ github.server_url }}/${{ github.repository }}"
+              $changelog += "`n`n[Full diff]($repo/compare/$previous...$tag)"
+          }
+
+          Set-Content -Path dist/changelog.md -Value $changelog -Encoding utf8
+          Write-Host $changelog
+
       - name: Write the release notes
         shell: pwsh
         run: |
@@ -83,6 +124,12 @@ jobs:
           # double-quoted one would eat the markdown code fences. Placeholders are substituted
           # afterwards rather than interpolated.
           $notes = @'
+          ## What changed
+
+          __CHANGELOG__
+
+          ## Downloads
+
           Two self-contained executables. Each carries the Core assembly and all 12 recovery
           scripts inside it, so nothing else needs to be copied alongside.
 
@@ -122,7 +169,9 @@ jobs:
           download executables from GitHub onto managed endpoints — see `docs/SECURITY.md`.
           '@
 
+          $changelog = Get-Content dist/changelog.md -Raw
           $notes = $notes.Replace('__SHA256__', $env:SHA256).Replace('__SIZE__', $env:SIZE)
+          $notes = $notes.Replace('__CHANGELOG__', $changelog.TrimEnd())
           Set-Content -Path dist/notes.md -Value $notes -Encoding utf8
 
       - name: Publish the release

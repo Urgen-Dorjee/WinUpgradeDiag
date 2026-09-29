@@ -109,6 +109,46 @@ queries need an administrator token. The CLI deliberately runs `asInvoker`: it s
 privilege the caller has, reports which logs it could not read, and returns exit code 4 so an
 unelevated run is detectable rather than silent. Run either as Administrator for full coverage.
 
+## Cutting a release
+
+**Pushing commits to `master` does not produce a release.** It runs `Build and test` and stops
+there. A release is triggered by pushing a **tag**, which is the whole difference:
+
+| You push | What runs | Result |
+| --- | --- | --- |
+| commits to `master` | `ci.yml` | Build and test only |
+| a tag matching `v*` | `release.yml` | Builds, tests, publishes a Release with the binaries |
+
+Two commands:
+
+```
+git tag -a v0.1.2 -m "what changed and why"
+git push origin v0.1.2
+```
+
+Three minutes later the Release page exists, with both executables, the ConfigMgr zip, and
+`SHA256SUMS.txt`. The release notes list every commit since the previous tag, generated from the
+log rather than written by hand — so the changelog is only as good as the commit subjects, which is
+its own reason to write them properly.
+
+There is also a **Run workflow** button on the Actions tab (`workflow_dispatch`) that takes a tag
+name, for re-publishing without moving anything in git.
+
+### Conventions worth keeping
+
+- **Tag from `master`, after CI is green.** The release workflow re-runs the tests and refuses to
+  publish if they fail, but finding that out at tag time wastes a version number.
+- **Annotated tags** (`-a` with a message), never lightweight. The message is what explains the
+  release to whoever finds it in two years.
+- **Never move a published tag.** If a release went out wrong, publish the fix as the next patch
+  version. A tag that points somewhere new is a tag nobody can trust, and anyone who already pulled
+  it now has something different from what you have. Re-using a version number is only safe when
+  the tag produced no release at all, which is to say when nothing was ever published under it.
+- **Version by what changed**: patch for fixes, minor for new capability, major when something a
+  caller depends on breaks.
+- **One tag per shipped thing.** Seven commits sitting untagged is seven improvements nobody can
+  download.
+
 ## Searching a huge log
 
 `setupact.log` is routinely 100–700 MB. Notepad cannot open a file that size — it reads the whole
