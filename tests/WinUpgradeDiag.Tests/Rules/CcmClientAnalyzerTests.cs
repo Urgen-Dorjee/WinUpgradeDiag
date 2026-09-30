@@ -190,6 +190,46 @@ namespace WinUpgradeDiag.Tests.Rules
         }
 
         /// <summary>
+        /// The rebuild script must not run ccmsetup.exe /uninstall by default.
+        /// <para>
+        /// That is the step that fails: once ccmsetup has cleaned up the folder a previous install
+        /// ran from, the MSI uninstall returns 1612 - installation source not available - and the
+        /// attempt ends with 0x8007064c. The same applies to /forceinstall, which uninstalls
+        /// first. The manual cleanup removes the same things without involving MSI at all, which
+        /// is why it is the route that works. Asserted here because it is knowledge from a real
+        /// session that a later edit could quietly undo.
+        /// </para>
+        /// </summary>
+        [Fact]
+        public void The_rebuild_tool_does_not_rely_on_the_msi_uninstaller()
+        {
+            var script = WinUpgradeDiag.Core.Remediation.EmbeddedScriptProvider
+                .Read("Rebuild-CcmClient.ps1");
+
+            Assert.NotNull(script);
+            var text = System.Text.Encoding.UTF8.GetString(script);
+
+            // /forceinstall must appear only in comments explaining why it is not used.
+            foreach (var line in text.Split('\n'))
+            {
+                var trimmed = line.TrimStart();
+                if (trimmed.StartsWith("#", StringComparison.Ordinal)) { continue; }
+                Assert.DoesNotContain("/forceinstall", trimmed, StringComparison.OrdinalIgnoreCase);
+            }
+
+            // The uninstaller is reachable, but only behind an explicit switch.
+            Assert.Contains("$TryMsiUninstall", text, StringComparison.Ordinal);
+            Assert.Contains("1612", text, StringComparison.Ordinal);
+
+            // And the catalogue entry says so too, so the confirmation dialog does not promise
+            // a step the script deliberately skips.
+            var tool = WinUpgradeDiag.Core.Remediation.ToolCatalog.All
+                .Single(t => t.Id == "REBUILD-CLIENT");
+            Assert.Contains(tool.Steps, step =>
+                step.IndexOf("1612", StringComparison.Ordinal) >= 0);
+        }
+
+        /// <summary>
         /// A healthy WMI repository alongside a dead client provider is worth stating: it rules
         /// out the repair everyone reaches for first.
         /// </summary>

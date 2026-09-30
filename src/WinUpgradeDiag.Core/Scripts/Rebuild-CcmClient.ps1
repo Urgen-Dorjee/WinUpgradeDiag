@@ -38,12 +38,18 @@
     every few minutes forever.
 
 .PARAMETER Stage
-    Remove  - uninstall and clean up only, then stop so the machine can be rebooted.
+    Remove  - clean up only, then stop so the machine can be rebooted (default).
     Install - install only. Run this after the reboot.
-    Both    - do both in one pass, without a reboot between them (default).
+    Both    - do both in one pass, without a reboot between them.
 
-    Remove then reboot then Install is the more reliable order: a reboot releases file and WMI
-    handles that an in-place reinstall can otherwise trip over.
+    Remove is the default deliberately. Skipping the reboot is what failed on the machine this
+    was written for: the install afterwards returned 0 but the client never registered. A reboot
+    releases file and WMI handles the reinstall otherwise trips over.
+
+.PARAMETER TryMsiUninstall
+    Run ccmsetup.exe /uninstall before the manual cleanup. Off by default: once ccmsetup has
+    cleaned up the folder a previous install ran from, the MSI uninstall returns 1612 and the
+    attempt ends with 0x8007064c. The manual cleanup does not need it.
 
 .PARAMETER WhatIf
     Show every action without performing any of it.
@@ -54,6 +60,7 @@
 
 .EXAMPLE
     .\Rebuild-CcmClient.ps1 -SiteCode ABC -ManagementPoint mp01.contoso.com -WhatIf
+    # Shows the removal without doing it. Always start here.
 
 .EXAMPLE
     .\Rebuild-CcmClient.ps1 -SiteCode ABC -ManagementPoint mp01.contoso.com -Stage Remove
@@ -84,7 +91,11 @@ param(
     [string] $Target,
 
     [ValidateSet('Both', 'Remove', 'Install')]
-    [string] $Stage = 'Both',
+    [string] $Stage = 'Remove',
+
+    # Attempt ccmsetup.exe /uninstall before the manual cleanup. Off by default because on the
+    # client this was written for it returns 1612 and achieves nothing.
+    [switch] $TryMsiUninstall,
 
     [int] $InstallTimeoutMinutes = 30
 )
@@ -135,14 +146,30 @@ if ($Stage -in @('Both', 'Remove')) {
         }
     }
 
-    Write-Step 'Running the client uninstaller'
-    if ($PSCmdlet.ShouldProcess('ccmsetup.exe /uninstall', 'Run')) {
-        if (Test-Path -LiteralPath $ccmsetupExe) {
-            $p = Start-Process -FilePath $ccmsetupExe -ArgumentList '/uninstall' -PassThru -Wait
-            Write-Ok "ccmsetup /uninstall exit code $($p.ExitCode)"
-        } else {
-            Write-Skip 'ccmsetup.exe not present - continuing with the manual cleanup'
+    # ccmsetup.exe /uninstall is deliberately NOT run.
+    #
+    # It is the step that fails. A previous install leaves the MSI registered against a source
+    # folder that ccmsetup itself deleted when that install finished, so the uninstall returns
+    # 1612 - "installation source for this product is not available" - and the whole attempt ends
+    # with 0x8007064c. The manual cleanup below removes the same things without asking MSI to do
+    # anything, which is why it works where /uninstall and /forceinstall do not.
+    #
+    # -TryMsiUninstall exists for a client that is merely unhealthy rather than in this state.
+    if ($TryMsiUninstall) {
+        Write-Step 'Running the client uninstaller (requested)'
+        if ($PSCmdlet.ShouldProcess('ccmsetup.exe /uninstall', 'Run')) {
+            if (Test-Path -LiteralPath $ccmsetupExe) {
+                $p = Start-Process -FilePath $ccmsetupExe -ArgumentList '/uninstall' -PassThru -Wait
+                Write-Ok "ccmsetup /uninstall exit code $($p.ExitCode)"
+                if ($p.ExitCode -eq 1612) {
+                    Write-Warning '1612 - the MSI source folder is gone. Expected on a client ccmsetup has already cleaned up after; the manual cleanup below does not need it.'
+                }
+            } else {
+                Write-Skip 'ccmsetup.exe not present - continuing with the manual cleanup'
+            }
         }
+    } else {
+        Write-Skip 'Skipping ccmsetup /uninstall - it returns 1612 once the MSI source folder is gone. Pass -TryMsiUninstall to attempt it anyway.'
     }
 
     Write-Step 'Removing WMI namespaces'
@@ -202,12 +229,19 @@ if ($Stage -in @('Both', 'Remove')) {
     }
 
     Write-Step 'Removing the ccmsetup retry task'
-    # Left behind by a failed install, and it will re-run that same failed command line.
-    if ($PSCmdlet.ShouldProcess('\Microsoft\Configuration Manager\Configuration Manager Client Retry Task', 'Unregister')) {
+    # Left behind by a failed install, holding the command line that failed - including
+    # /forceinstall if that was tried - and it will run it again on its own schedule.
+    # Targeted by name: unregistering everything under the Configuration Manager task path
+    # would take out tasks this script has no business touching.
+    if ($PSCmdlet.ShouldProcess('Configuration Manager Client Retry Task', 'Unregister')) {
         try {
-            Get-ScheduledTask -TaskPath '\Microsoft\Configuration Manager\' -ErrorAction Stop |
-                Unregister-ScheduledTask -Confirm:$false -ErrorAction Stop
-            Write-Ok 'retry task removed'
+            $task = Get-ScheduledTask -TaskName 'Configuration Manager Client Retry Task' -ErrorAction SilentlyContinue
+            if ($task) {
+                $task | Unregister-ScheduledTask -Confirm:$false -ErrorAction Stop
+                Write-Ok 'retry task removed'
+            } else {
+                Write-Skip 'retry task - not present'
+            }
         } catch { Write-Skip "retry task - $($_.Exception.Message)" }
     }
 
@@ -224,6 +258,7 @@ if ($Stage -in @('Both', 'Install')) {
     Write-Step 'Installing the client'
 
     # SMSMP= is the argument that is usually missing. /mp: only sets the download source.
+    # No /forceinstall. It makes ccmsetup uninstall first, which is the 1612 path again.
     $arguments = "/mp:$ManagementPoint SMSSITECODE=$SiteCode SMSMP=$ManagementPoint"
     Write-Host "   $ccmsetupExe $arguments" -ForegroundColor DarkGray
 

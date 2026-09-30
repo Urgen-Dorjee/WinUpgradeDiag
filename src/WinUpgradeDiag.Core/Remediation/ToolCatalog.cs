@@ -166,12 +166,13 @@ namespace WinUpgradeDiag.Core.Remediation
                 new[]
                 {
                     "Stop and delete CcmExec, ccmsetup, smstsmgr and CmRcService.",
-                    "Run ccmsetup.exe /uninstall.",
+                    "Skip ccmsetup.exe /uninstall, which returns 1612 once its MSI source folder is gone.",
                     "Remove the root\\ccm, root\\ccmvdi, root\\smsdm and root\\cimv2\\sms WMI namespaces.",
                     "Delete C:\\Windows\\CCM, ccmcache and SMSCFG.ini.",
                     "Delete the CCM, CCMSetup and SMS registry keys and the SMS certificate store.",
                     "Remove the ccmsetup retry task, which would otherwise re-run the failed install.",
-                    "Reinstall with /mp:, SMSSITECODE= and SMSMP=, then wait for CcmExec to come up."
+                    "Stop after the cleanup by default, so the machine can be rebooted before the install.",
+                    "Reinstall with /mp:, SMSSITECODE= and SMSMP= and no /forceinstall, then wait for CcmExec."
                 },
                 new[]
                 {
