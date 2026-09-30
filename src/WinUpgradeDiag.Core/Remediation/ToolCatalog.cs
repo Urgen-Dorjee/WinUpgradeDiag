@@ -182,12 +182,14 @@ namespace WinUpgradeDiag.Core.Remediation
                     "The client identity is reset, so the machine may appear twice in the console until the duplicate ages out."
                 },
                 parameterName: "Target",
-                parameterPrompt: "Site code and management point, as SITE/mp.fqdn",
+                parameterPrompt: "Type your site code, a slash, then your management point",
                 parameterExample: "ABC/mp01.contoso.com",
                 parameterHelp:
-                    "Both values are needed. SMSMP= is what assigns the client to a management point; " +
-                    "/mp: only says where to download the installer from, which is why a client installed " +
-                    "with /mp: alone returns success and then never registers.",
+                    "Filled in from this machine where it could be worked out - check it is right. " +
+                    "The site code is the three characters your site is known by; the management point " +
+                    "is a server name. Both appear in ccmsetup.log, and whoever owns ConfigMgr will " +
+                    "know them. They are needed separately because SMSMP= is what assigns the client " +
+                    "to a management point, while /mp: only says where to download the installer from.",
                 acknowledgement:
                     "I have confirmed this machine's client is broken, not merely unregistered, and that " +
                     "a duplicate device record in the console is acceptable."),

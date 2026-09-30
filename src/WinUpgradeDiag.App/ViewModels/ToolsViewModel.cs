@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using WinUpgradeDiag.Core.Collect;
 using WinUpgradeDiag.Core.Remediation;
 
 namespace WinUpgradeDiag.App.ViewModels
@@ -352,6 +353,13 @@ namespace WinUpgradeDiag.App.ViewModels
             if (string.Equals(tool.ParameterName, "ComputerName", StringComparison.OrdinalIgnoreCase))
             {
                 return Environment.MachineName;
+            }
+
+            // Asking someone to type "SITE/mp.fqdn" is asking them to go and look up two facts
+            // this machine already holds. Fill it in; they can still correct it.
+            if (string.Equals(tool.ParameterName, "Target", StringComparison.OrdinalIgnoreCase))
+            {
+                return CcmClientHealthCollector.SuggestTarget() ?? string.Empty;
             }
 
             return string.Empty;

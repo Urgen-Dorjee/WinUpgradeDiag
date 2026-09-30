@@ -165,6 +165,40 @@ namespace WinUpgradeDiag.Tests.Rules
             }
         }
 
+        /// <summary>
+        /// Asking an operator to type "SITE/mp.fqdn" is asking them to look up two facts the
+        /// machine already holds and join them with a separator that exists only because the tool
+        /// runner passes one argument. ccmsetup.log keeps both after the registry has been cleaned
+        /// out, which is the state this tool runs in.
+        /// </summary>
+        [Fact]
+        public void The_site_and_management_point_are_recovered_from_ccmsetup_log()
+        {
+            using (var tmp = new TempDirectory())
+            {
+                var log = tmp.File("ccmsetup.log",
+                    "<![LOG[Running as user \"SYSTEM\"]LOG]!>\r\n" +
+                    "<![LOG[Command line parameters for ccmsetup have been specified. No registry lookup for command line parameters is required.]LOG]!>\r\n" +
+                    "<![LOG[CcmSetup command line: ccmsetup.exe /mp:DTCMPSPRD.hsys.local SMSSITECODE=JMH SMSMP=DTCMPSPRD.hsys.local]LOG]!>\r\n" +
+                    "<![LOG[CcmSetup is exiting with return code 0]LOG]!>\r\n");
+
+                var found = WinUpgradeDiag.Core.Collect.CcmClientHealthCollector.FromCcmSetupLog(log);
+
+                Assert.Equal("JMH", found.Item1);
+                Assert.Equal("DTCMPSPRD.hsys.local", found.Item2);
+            }
+        }
+
+        [Fact]
+        public void A_missing_ccmsetup_log_yields_no_suggestion_rather_than_throwing()
+        {
+            var found = WinUpgradeDiag.Core.Collect.CcmClientHealthCollector.FromCcmSetupLog(
+                Path.Combine(Path.GetTempPath(), "gone-" + Guid.NewGuid().ToString("N"), "ccmsetup.log"));
+
+            Assert.Null(found.Item1);
+            Assert.Null(found.Item2);
+        }
+
         [Fact]
         public void A_healthy_registered_client_produces_nothing()
         {

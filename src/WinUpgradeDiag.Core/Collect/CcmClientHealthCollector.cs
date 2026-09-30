@@ -214,6 +214,103 @@ namespace WinUpgradeDiag.Core.Collect
             }
         }
 
+        /// <summary>
+        /// The site code and management point this machine was last assigned to, as
+        /// "SITE/mp.fqdn", or null if neither can be established.
+        /// <para>
+        /// Exists so the rebuild tool does not have to ask. Being asked to type
+        /// "SITE/mp.fqdn" is a bad question: it is two facts the operator has to go and find,
+        /// joined by a separator that only exists because the tool runner passes one argument.
+        /// The machine knows both, and keeps knowing them in ccmsetup.log even after the
+        /// registry has been cleaned out - which is exactly the state this tool runs in.
+        /// </para>
+        /// </summary>
+        public static string SuggestTarget()
+        {
+            var site = ReadString(@"SOFTWARE\Microsoft\SMS\Mobile Client", "AssignedSiteCode")
+                       ?? ReadString(@"SOFTWARE\Microsoft\CCM", "AssignedSiteCode");
+            var mp = ReadString(@"SOFTWARE\Microsoft\SMS\Mobile Client", "AssignedMP")
+                     ?? ReadString(@"SOFTWARE\Microsoft\CCM", "SMSSLP");
+
+            if (site == null || mp == null)
+            {
+                var fromLog = FromCcmSetupLog();
+                site = site ?? fromLog.Item1;
+                mp = mp ?? fromLog.Item2;
+            }
+
+            if (string.IsNullOrWhiteSpace(site) || string.IsNullOrWhiteSpace(mp))
+            {
+                return null;
+            }
+
+            return site.Trim() + "/" + mp.Trim();
+        }
+
+        /// <summary>
+        /// Recovers the site code and management point from the last install attempt recorded in
+        /// ccmsetup.log. The folder survives the cleanup this tool performs, so this is what
+        /// answers the question on a machine whose client registry keys are already gone.
+        /// </summary>
+        public static Tuple<string, string> FromCcmSetupLog(string logPath = null)
+        {
+            string site = null;
+            string mp = null;
+
+            try
+            {
+                var path = logPath ?? Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+                    "ccmsetup", "Logs", "ccmsetup.log");
+
+                if (!File.Exists(path))
+                {
+                    return Tuple.Create(site, mp);
+                }
+
+                // Read-share: ccmsetup may still hold the file open.
+                using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
+                           FileShare.ReadWrite | FileShare.Delete))
+                using (var reader = new StreamReader(stream))
+                {
+                    string line;
+                    while ((line = reader.ReadLine()) != null)
+                    {
+                        // Later entries win: the most recent attempt is the relevant one.
+                        var siteMatch = SiteCodeInLog.Match(line);
+                        if (siteMatch.Success)
+                        {
+                            site = siteMatch.Groups["site"].Value;
+                        }
+
+                        var mpMatch = ManagementPointInLog.Match(line);
+                        if (mpMatch.Success)
+                        {
+                            mp = mpMatch.Groups["mp"].Value;
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // A missing or unreadable log just means no suggestion.
+            }
+
+            return Tuple.Create(site, mp);
+        }
+
+        private static readonly System.Text.RegularExpressions.Regex SiteCodeInLog =
+            new System.Text.RegularExpressions.Regex(
+                @"(?:SMSSITECODE=|Assigned site code[:\s]+|site code[:\s]+)(?<site>[A-Za-z0-9]{3})\b",
+                System.Text.RegularExpressions.RegexOptions.Compiled |
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        private static readonly System.Text.RegularExpressions.Regex ManagementPointInLog =
+            new System.Text.RegularExpressions.Regex(
+                @"(?:SMSMP=|/mp:|MP '|management point[:\s]+)(?<mp>[A-Za-z0-9][A-Za-z0-9.\-]{3,})",
+                System.Text.RegularExpressions.RegexOptions.Compiled |
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
         private static string ReadString(string subKey, string valueName)
         {
             try
