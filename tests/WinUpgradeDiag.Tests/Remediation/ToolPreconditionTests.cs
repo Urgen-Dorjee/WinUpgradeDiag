@@ -102,10 +102,18 @@ namespace WinUpgradeDiag.Tests.Remediation
         [Fact]
         public void No_other_tool_demands_an_acknowledgement_so_it_keeps_its_weight()
         {
-            // If everything asked for a tick, ticking would become reflex and mean nothing.
-            var withAck = ToolCatalog.All.Where(t => t.RequiresAcknowledgement).Select(t => t.Id).ToList();
+            // If everything asked for a tick, ticking would become reflex and mean nothing. The
+            // bar is a fact the tool cannot check for itself and cannot undo: REMOVE-LEFTOVERS
+            // needs a person to confirm the machine actually works before the rollback data goes,
+            // and REBUILD-CLIENT resets the client identity, which leaves a duplicate record in the
+            // console that no later run can take back.
+            var withAck = ToolCatalog.All
+                .Where(t => t.RequiresAcknowledgement)
+                .Select(t => t.Id)
+                .OrderBy(id => id, StringComparer.Ordinal)
+                .ToList();
 
-            Assert.Equal(new[] { "REMOVE-LEFTOVERS" }, withAck);
+            Assert.Equal(new[] { "REBUILD-CLIENT", "REMOVE-LEFTOVERS" }, withAck);
         }
 
         // ---------------------------------------------------------------- the crash

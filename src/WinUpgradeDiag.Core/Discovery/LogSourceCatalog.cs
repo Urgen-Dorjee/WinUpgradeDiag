@@ -141,7 +141,11 @@ namespace WinUpgradeDiag.Core.Discovery
             foreach (var name in new[]
                      {
                          "execmgr.log", "CAS.log", "ContentTransferManager.log",
-                         "DataTransferService.log", "AppEnforce.log", "PolicyAgent.log"
+                         "DataTransferService.log", "AppEnforce.log", "PolicyAgent.log",
+                         // Client health rather than content: these two say why a client that
+                         // installed successfully never registers with a site.
+                         "ClientIDManagerStartup.log", "LocationServices.log",
+                         "ClientLocation.log", "CcmExec.log", "CcmRepair.log"
                      })
             {
                 sources.Add(new LogSource(

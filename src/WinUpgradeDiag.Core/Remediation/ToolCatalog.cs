@@ -156,6 +156,41 @@ namespace WinUpgradeDiag.Core.Remediation
                 new string[0]),
 
             new ToolDefinition(
+                "REBUILD-CLIENT", "Rebuild-CcmClient.ps1",
+                "Rebuild a broken ConfigMgr client",
+                "For a client whose WMI provider will not load: the Configuration Manager applet will not " +
+                "open, Software Center is empty, and CcmExec starts then stops. Removes the client " +
+                "completely and reinstalls it with the management point set explicitly. Try the " +
+                "lighter \"repair the ConfigMgr client\" first — this is what to do when that fails.",
+                RemediationRisk.Destructive, "Fix",
+                new[]
+                {
+                    "Stop and delete CcmExec, ccmsetup, smstsmgr and CmRcService.",
+                    "Run ccmsetup.exe /uninstall.",
+                    "Remove the root\\ccm, root\\ccmvdi, root\\smsdm and root\\cimv2\\sms WMI namespaces.",
+                    "Delete C:\\Windows\\CCM, ccmcache and SMSCFG.ini.",
+                    "Delete the CCM, CCMSetup and SMS registry keys and the SMS certificate store.",
+                    "Remove the ccmsetup retry task, which would otherwise re-run the failed install.",
+                    "Reinstall with /mp:, SMSSITECODE= and SMSMP=, then wait for CcmExec to come up."
+                },
+                new[]
+                {
+                    "No task sequence or Windows Setup may be running. The script refuses if one is.",
+                    "Repair the ConfigMgr client should have been tried first and failed.",
+                    "C:\\Windows\\ccmsetup must hold the client installer.",
+                    "The client identity is reset, so the machine may appear twice in the console until the duplicate ages out."
+                },
+                parameterName: "Target",
+                parameterPrompt: "Site code and management point, as SITE/mp.fqdn",
+                parameterExample: "ABC/mp01.contoso.com",
+                parameterHelp:
+                    "Both values are needed. SMSMP= is what assigns the client to a management point; " +
+                    "/mp: only says where to download the installer from, which is why a client installed " +
+                    "with /mp: alone returns success and then never registers.",
+                acknowledgement:
+                    "I have confirmed this machine's client is broken, not merely unregistered, and that " +
+                    "a duplicate device record in the console is acceptable."),
+            new ToolDefinition(
                 "LIST-CACHE", "List-CcmCache.ps1",
                 "List client cache",
                 "Lists cached content with sizes, and flags records pointing at folders that no longer exist. Use it to find the OS package's ContentId.",

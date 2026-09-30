@@ -38,6 +38,12 @@ namespace WinUpgradeDiag.Core.Collect
         /// </summary>
         public MachineIdentityInfo Machine { get; set; }
 
+        /// <summary>
+        /// Health of the ConfigMgr client itself. A broken client and a broken upgrade look almost
+        /// identical from Software Center, and only one of them was previously diagnosable.
+        /// </summary>
+        public CcmClientHealthInfo CcmClient { get; set; }
+
         /// <summary>Third-party driver packages with their installed versions.</summary>
         public IReadOnlyList<DriverPackageInfo> DriverPackages { get; set; }
         public IReadOnlyList<EventRecordInfo> Events { get; set; }

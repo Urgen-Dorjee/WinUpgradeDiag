@@ -76,6 +76,15 @@ namespace WinUpgradeDiag.Core.Collect
 
             Step(state, progress, cancellationToken, "Listing filter drivers", () => state.FilterDrivers = new FilterDriverCollector().Collect());
 
+            Step(state, progress, cancellationToken, "Checking the ConfigMgr client", () =>
+            {
+                state.CcmClient = new CcmClientHealthCollector().Collect();
+                foreach (var error in state.CcmClient.Errors)
+                {
+                    state.CollectionErrors.Add(error);
+                }
+            });
+
             Step(state, progress, cancellationToken, "Reading model, BIOS and third-party drivers", () =>
             {
                 var collector = new MachineIdentityCollector();
