@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using WinUpgradeDiag.Core.Collect;
+using WinUpgradeDiag.Core.Orchestration;
 using WinUpgradeDiag.Core.Remediation;
 
 namespace WinUpgradeDiag.App.ViewModels
@@ -25,6 +26,7 @@ namespace WinUpgradeDiag.App.ViewModels
         private readonly RemediationRunner _runner = new RemediationRunner();
         private readonly RemediationPreview _preview = new RemediationPreview();
         private readonly Func<string> _auditFolderProvider;
+        private readonly Func<DiagnosticContext> _contextProvider;
 
         private string _scriptFolder;
         private string _status = "";
@@ -33,9 +35,12 @@ namespace WinUpgradeDiag.App.ViewModels
         private ToolRow _selected;
         private CancellationTokenSource _cts;
 
-        public ToolsViewModel(Func<string> auditFolderProvider)
+        public ToolsViewModel(Func<string> auditFolderProvider, Func<DiagnosticContext> contextProvider = null)
         {
             _auditFolderProvider = auditFolderProvider;
+            // The collected state answers most of what the tools ask for. Without it the Tools tab
+            // has to interrogate the operator for values sitting a tab away.
+            _contextProvider = contextProvider ?? (() => null);
             _scriptFolder = ToolCatalog.LocateScriptFolder() ?? "";
 
             foreach (var tool in ToolCatalog.All)
@@ -248,12 +253,26 @@ namespace WinUpgradeDiag.App.ViewModels
             //    the menu has no field to type into, so it could only ever refuse.
             if (tool.RequiresParameter && string.IsNullOrWhiteSpace(parameterValue))
             {
+                var suggested = SuggestParameter(tool);
+
+                // When nothing could be worked out, say where the value comes from rather than
+                // leaving an empty box and an example of somebody else's site.
+                var help = tool.ParameterHelp;
+                if (string.IsNullOrWhiteSpace(suggested))
+                {
+                    var whereToFind = ParameterSuggestion.WhereToFind(tool, _contextProvider());
+                    if (!string.IsNullOrWhiteSpace(whereToFind))
+                    {
+                        help = whereToFind + (string.IsNullOrWhiteSpace(help) ? "" : "\n\n" + help);
+                    }
+                }
+
                 var prompt = new PromptWindow(
                     tool.Title,
                     tool.ParameterPrompt + ":",
-                    SuggestParameter(tool),
+                    suggested,
                     tool.ParameterExample,
-                    tool.ParameterHelp)
+                    help)
                 {
                     Owner = Application.Current?.MainWindow
                 };
@@ -348,21 +367,40 @@ namespace WinUpgradeDiag.App.ViewModels
         /// machine's own name: it is almost never the right answer, but it shows the expected
         /// shape, which a blank box does not.
         /// </summary>
-        private static string SuggestParameter(ToolDefinition tool)
+        private string SuggestParameter(ToolDefinition tool)
         {
-            if (string.Equals(tool.ParameterName, "ComputerName", StringComparison.OrdinalIgnoreCase))
+            return ParameterSuggestion.For(tool, _contextProvider());
+        }
+
+        /// <summary>
+        /// Fills each tool card's parameter box from what the run just collected.
+        /// <para>
+        /// Called when a diagnostic finishes, so the Tools tab shows the content id and package id
+        /// already in place rather than a row of empty boxes a technician has to go and research.
+        /// A value already typed is never overwritten — that would discard a deliberate correction.
+        /// </para>
+        /// </summary>
+        public void RefreshSuggestions()
+        {
+            var context = _contextProvider();
+            if (context == null)
             {
-                return Environment.MachineName;
+                return;
             }
 
-            // Asking someone to type "SITE/mp.fqdn" is asking them to go and look up two facts
-            // this machine already holds. Fill it in; they can still correct it.
-            if (string.Equals(tool.ParameterName, "Target", StringComparison.OrdinalIgnoreCase))
+            foreach (var row in Tools)
             {
-                return CcmClientHealthCollector.SuggestTarget() ?? string.Empty;
-            }
+                if (!row.Tool.RequiresParameter || !string.IsNullOrWhiteSpace(row.ParameterValue))
+                {
+                    continue;
+                }
 
-            return string.Empty;
+                var suggested = ParameterSuggestion.For(row.Tool, context);
+                if (!string.IsNullOrWhiteSpace(suggested))
+                {
+                    row.ParameterValue = suggested;
+                }
+            }
         }
 
         /// <summary>

@@ -75,7 +75,9 @@ namespace WinUpgradeDiag.App.ViewModels
 
             // The toolbox is available from the moment the app opens: a technician standing at a
             // broken machine should not have to run a diagnostic first to reach the fix scripts.
-            Tools = new ToolsViewModel(() => _lastExportDirectory ?? ReportExporter.DefaultOutputRoot);
+            Tools = new ToolsViewModel(
+                () => _lastExportDirectory ?? ReportExporter.DefaultOutputRoot,
+                () => _context);
 
             AboutCommand = new RelayCommand(ShowAbout);
             ExitCommand = new RelayCommand(() => System.Windows.Application.Current?.Shutdown());
@@ -170,6 +172,11 @@ namespace WinUpgradeDiag.App.ViewModels
             }
 
             PopulateResults();
+
+            // The run just worked out the content id and the task sequence package id. Put them
+            // into the tool cards so the Tools tab is ready rather than asking for them again.
+            Tools.RefreshSuggestions();
+
             OnPropertyChanged(nameof(OutputPreview));
             LastRunText = "Last run " + DateTime.Now.ToString("HH:mm:ss", CultureInfo.CurrentCulture);
             State = RunState.Results;
