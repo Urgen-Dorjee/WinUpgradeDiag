@@ -41,7 +41,11 @@ namespace WinUpgradeDiag.App.ViewModels
             // The collected state answers most of what the tools ask for. Without it the Tools tab
             // has to interrogate the operator for values sitting a tab away.
             _contextProvider = contextProvider ?? (() => null);
-            _scriptFolder = ToolCatalog.LocateScriptFolder() ?? "";
+            // Deliberately not auto-located. Walking up the tree for a Script folder and adopting
+            // it silently makes the source of what runs depend on where the .exe happens to sit,
+            // and presented that as an override the operator had chosen. The embedded copies are
+            // the source of truth; a folder is set only when someone picks one.
+            _scriptFolder = "";
 
             foreach (var tool in ToolCatalog.All)
             {
@@ -55,6 +59,8 @@ namespace WinUpgradeDiag.App.ViewModels
             // The transcript pane had no way out: once a tool had written to it, it sat on screen
             // for the rest of the session with no control to dismiss it.
             ClearOutputCommand = new RelayCommand(ClearOutput, () => !_isRunning && HasOutput);
+            GrowOutputCommand = new RelayCommand(() => OutputHeight = Math.Min(OutputHeight + 120, 900));
+            ShrinkOutputCommand = new RelayCommand(() => OutputHeight = Math.Max(OutputHeight - 120, 90));
             CopyOutputCommand = new RelayCommand(CopyOutput, () => HasOutput);
             OpenScriptFolderCommand = new RelayCommand(OpenScriptFolder, () => ScriptsFound);
 
@@ -81,6 +87,19 @@ namespace WinUpgradeDiag.App.ViewModels
         public RelayCommand<ToolRow> PreviewToolCommand { get; }
         public RelayCommand BrowseScriptFolderCommand { get; }
         public RelayCommand ClearOutputCommand { get; }
+        public RelayCommand GrowOutputCommand { get; }
+        public RelayCommand ShrinkOutputCommand { get; }
+
+        /// <summary>
+        /// Height of the transcript pane. It was fixed at a 260px maximum, so a script printing
+        /// twenty lines of machine state showed six of them with no way to reach the rest.
+        /// </summary>
+        private double _outputHeight = 220;
+        public double OutputHeight
+        {
+            get => _outputHeight;
+            set => Set(ref _outputHeight, value);
+        }
         public RelayCommand CopyOutputCommand { get; }
         public RelayCommand OpenScriptFolderCommand { get; }
 
@@ -127,11 +146,20 @@ namespace WinUpgradeDiag.App.ViewModels
         {
             get
             {
+                // The runner prefers the embedded copy whenever the build carries one — see
+                // RemediationRunner: Contains(name) ? Extract(name) : FromDisk(path). Saying the
+                // embedded copies were "being ignored" was simply false, and alarming, because
+                // embedding them is what keeps a loose .ps1 from becoming a writable execution path.
+                if (ScriptsOnDisk && !ScriptsEmbedded)
+                {
+                    return "Loaded from the folder below; this build carries none of its own.";
+                }
+
                 if (ScriptsOnDisk)
                 {
-                    return ScriptsEmbedded
-                        ? "Overridden by the folder below. The embedded copies are being ignored."
-                        : "Loaded from the folder below.";
+                    return EmbeddedScriptProvider.AvailableScripts.Count +
+                           " script(s) embedded in this build, and those are what run. The folder " +
+                           "below is only a fallback for a script this build does not carry.";
                 }
 
                 if (ScriptsEmbedded)
@@ -142,6 +170,18 @@ namespace WinUpgradeDiag.App.ViewModels
 
                 return "No scripts are available. This build carries none and no folder has been set.";
             }
+        }
+
+        /// <summary>
+        /// Adds lines to the transcript, so every outcome — ran, refused, cancelled — appears in
+        /// the same place rather than some in the pane and some only in a dialog.
+        /// </summary>
+        private void AppendOutput(params string[] lines)
+        {
+            var text = string.Join(Environment.NewLine, lines);
+            Output = string.IsNullOrEmpty(Output)
+                ? text
+                : Output + Environment.NewLine + Environment.NewLine + text;
         }
 
         /// <summary>Clears the transcript so the pane can be dismissed once it has been read.</summary>
@@ -301,6 +341,14 @@ namespace WinUpgradeDiag.App.ViewModels
             if (!preflight.IsAllowed)
             {
                 Status = preflight.Message;
+
+                // Into the transcript as well, not only a dialog and a status line. A tool that
+                // refused wrote nothing to the pane, so from the operator's side some tools showed
+                // their working and others appeared to do nothing at all.
+                AppendOutput(
+                    "== " + tool.Title,
+                    "   REFUSED: " + preflight.Message,
+                    "   Nothing was changed on this machine.");
                 ActionDialog.Show(
                     Application.Current?.MainWindow,
                     DialogKind.Warning,

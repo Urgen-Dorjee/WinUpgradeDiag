@@ -773,9 +773,15 @@
                                 </StackPanel>
                             </Border>
 
-                            <!-- Output pane -->
+                            <!-- Output pane. Its height is driven by the view model: a
+                                 GridSplitter needs a Grid parent and this is a DockPanel, and
+                                 explicit Taller/Shorter steps are more predictable to use than a
+                                 drag handle on a pane that appears and disappears. It was capped at
+                                 260px, so a script printing twenty lines of state showed six and
+                                 offered no way to reach the rest. -->
                             <Border DockPanel.Dock="Bottom" Margin="0,12,0,0" CornerRadius="4" Padding="12"
-                                    Background="{StaticResource Ink900}" MinHeight="120" MaxHeight="260"
+                                    Background="{StaticResource Ink900}"
+                                    MinHeight="90" Height="{Binding OutputHeight}"
                                     Visibility="{Binding HasOutput, Converter={StaticResource BoolToVisibility}}">
                                 <DockPanel>
                                     <!-- Once a tool had written here the pane stayed for the rest of
@@ -785,6 +791,14 @@
                                                 Command="{Binding ClearOutputCommand}"
                                                 Style="{StaticResource DarkPaneButton}"
                                                 ToolTip="Clear the transcript and hide this pane" />
+                                        <Button DockPanel.Dock="Right" Content="Taller" Padding="10,3" Margin="6,0,0,0"
+                                                Command="{Binding GrowOutputCommand}"
+                                                Style="{StaticResource DarkPaneButton}"
+                                                ToolTip="Show more of the transcript" />
+                                        <Button DockPanel.Dock="Right" Content="Shorter" Padding="10,3" Margin="6,0,0,0"
+                                                Command="{Binding ShrinkOutputCommand}"
+                                                Style="{StaticResource DarkPaneButton}"
+                                                ToolTip="Give the space back to the tool list" />
                                         <Button DockPanel.Dock="Right" Content="Copy" Padding="10,3"
                                                 Command="{Binding CopyOutputCommand}"
                                                 Style="{StaticResource DarkPaneButton}"
