@@ -39,6 +39,7 @@ namespace WinUpgradeDiag.Core.Rules
         private readonly DriverInstallAnalyzer _driverInstalls = new DriverInstallAnalyzer();
         private readonly CcmClientAnalyzer _ccmClient = new CcmClientAnalyzer();
         private readonly BugCheckAnalyzer _bugChecks = new BugCheckAnalyzer();
+        private readonly SetupDiagAnalyzer _setupDiag = new SetupDiagAnalyzer();
 
         public Verdict Evaluate(
             DiagnosticContext context,
@@ -84,6 +85,9 @@ namespace WinUpgradeDiag.Core.Rules
             // The crash and its stop code, from the dump header or the event logs Setup saved before
             // rolling back, and the device whose install the crash cut off.
             findings.AddRange(_bugChecks.Analyze(context, progress, cancellationToken));
+
+            // Microsoft's own conclusion, which Windows recorded when the upgrade failed.
+            findings.AddRange(_setupDiag.Analyze(context, progress, cancellationToken));
 
             var ranked = Rank(findings);
 
@@ -745,6 +749,7 @@ namespace WinUpgradeDiag.Core.Rules
         private static bool QuotesTheFailure(string id)
         {
             return id.StartsWith("BC-10", StringComparison.Ordinal) ||
+                   id.StartsWith("SD-10", StringComparison.Ordinal) ||
                    id.StartsWith("CC-10", StringComparison.Ordinal) ||
                    id.StartsWith("SU-10", StringComparison.Ordinal) ||
                    id.StartsWith("TS-10", StringComparison.Ordinal) ||

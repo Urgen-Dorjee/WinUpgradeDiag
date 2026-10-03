@@ -44,6 +44,12 @@ namespace WinUpgradeDiag.Core.Collect
         /// </summary>
         public CcmClientHealthInfo CcmClient { get; set; }
 
+        /// <summary>
+        /// SetupDiag's result as Windows recorded it in the registry, for a machine where the
+        /// results file has been tidied away. Null when SetupDiag has never run here.
+        /// </summary>
+        public SetupDiagResult SetupDiag { get; set; }
+
         /// <summary>Third-party driver packages with their installed versions.</summary>
         public IReadOnlyList<DriverPackageInfo> DriverPackages { get; set; }
         public IReadOnlyList<EventRecordInfo> Events { get; set; }

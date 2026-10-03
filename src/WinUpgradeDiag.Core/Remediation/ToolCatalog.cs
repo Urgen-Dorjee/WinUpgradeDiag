@@ -177,7 +177,7 @@ namespace WinUpgradeDiag.Core.Remediation
         /// <summary>The order tools are presented in. Every tool must appear exactly once.</summary>
         public static readonly IReadOnlyList<string> DisplayOrder = new[]
         {
-            "CHECK-STATE", "LIST-CACHE", "GET-PROGRESS", "WATCH-SMSTS", "FIX-E", "FIX-C", "RESET-TS", "FIX-B", "FIX-A", "FIX-D", "REMOVE-LEFTOVERS", "REPAIR-CLIENT", "REBUILD-CLIENT"
+            "CHECK-STATE", "RUN-SETUPDIAG", "LIST-CACHE", "GET-PROGRESS", "WATCH-SMSTS", "FIX-E", "FIX-C", "RESET-TS", "FIX-B", "FIX-A", "FIX-D", "REMOVE-LEFTOVERS", "REPAIR-CLIENT", "REBUILD-CLIENT"
         };
 
         private static IReadOnlyList<ToolDefinition> Ordered()
@@ -239,6 +239,27 @@ namespace WinUpgradeDiag.Core.Remediation
                     "I have confirmed this machine's client is broken, not merely unregistered, and that " +
                     "a duplicate device record in the console is acceptable.",
                 useWhen: "Configuration Manager will not open, or its service starts and then stops. Use when Repair has not worked."),
+            new ToolDefinition(
+                "RUN-SETUPDIAG", "Run-SetupDiag.ps1",
+                "Ask Windows why the upgrade failed",
+                "Shows the result Windows recorded when the upgrade failed, then runs Microsoft's SetupDiag on " +
+                "this PC's upgrade logs if a copy signed by Microsoft is found here.",
+                RemediationRisk.ReadOnly, "Inspect",
+                new[]
+                {
+                    "Show the SetupDiag result Windows saved when the upgrade failed, if there is one.",
+                    "Look for setupdiag.exe in Setup's folder, under Windows.old, and in the client cache.",
+                    "Check the copy is validly signed by Microsoft, and refuse to run it otherwise.",
+                    "Run it on this PC's upgrade logs with Microsoft telemetry off, and show what it found."
+                },
+                new[]
+                {
+                    "Only a copy signed by Microsoft is ever run. Nothing is downloaded.",
+                    "SetupDiag writes its result file to the temp folder and may record it under " +
+                    "HKLM\\SYSTEM\\Setup. It changes nothing else."
+                },
+                useWhen: "An upgrade failed or rolled back and you want Microsoft's own analysis of the logs, " +
+                         "including any driver it blames."),
             new ToolDefinition(
                 "LIST-CACHE", "List-CcmCache.ps1",
                 "Show downloaded content",

@@ -80,6 +80,21 @@ namespace WinUpgradeDiag.Core.Discovery
                 "Exported event logs captured at rollback time.",
                 rollback, LogSourceKind.DirectoryGlob, "*.evtx", highValue: true));
 
+            // --- Windows' own diagnosis ---
+            //
+            // Since Windows 10 2004, Setup runs Microsoft's SetupDiag automatically when an upgrade
+            // fails and writes its conclusion here. After a later successful upgrade the old one
+            // moves under Windows.old.
+            sources.Add(new LogSource(
+                "setupdiag-results", LogSourceCategory.SetupRollback, "SetupDiag results",
+                "Microsoft's own analysis of the failed upgrade, written by Windows Setup when it failed.",
+                Path.Combine(windir, "Logs", "SetupDiag", "SetupDiagResults.xml"), highValue: true));
+            sources.Add(new LogSource(
+                "setupdiag-results-old", LogSourceCategory.PreviousOs, "SetupDiag results (Windows.old)",
+                "SetupDiag's analysis from before the most recent upgrade.",
+                Path.Combine(systemDrive + Path.DirectorySeparatorChar, "Windows.old", "Windows", "Logs", "SetupDiag",
+                    "SetupDiagResults.xml")));
+
             // --- Driver installation, the live record ---
             //
             // This is where a PnP watchdog failure is written down, and it was not looked at. The

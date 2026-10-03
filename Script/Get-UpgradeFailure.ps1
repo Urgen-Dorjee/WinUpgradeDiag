@@ -10,13 +10,14 @@
     path-allowed, which is why the recovery scripts in this folder run on machines that
     refuse WinUpgradeDiag.Cli.exe.
 
-    It answers the three questions worth asking, in the order they matter:
+    It answers the questions worth asking, in the order they matter:
 
       1. Which task sequence step failed, and with what code.
       2. What Windows Setup itself recorded as an error.
-      3. Whether the machine crashed, with which stop code, and which device install the crash
+      3. What Microsoft's SetupDiag concluded - Windows runs it itself when an upgrade fails.
+      4. Whether the machine crashed, with which stop code, and which device install the crash
          cut off - the answer to a DRIVER_PNP_WATCHDOG.
-      4. Which device drivers failed to install.
+      5. Which device drivers failed to install.
 
     Read-only. It opens logs and reads the registry. It changes nothing.
 
@@ -187,9 +188,70 @@ if (-not $foundErrors) {
     Add-Line 'No readable setuperr.log. If one exists under $WINDOWS.~BT, re-run this elevated.'
 }
 
-# ---------------------------------------------------------------- 3. the crash
+# ---------------------------------------------------------------- 3. Windows' own diagnosis
 
-Add-Heading '3. Did the machine crash, and while installing what?'
+Add-Heading "3. What Windows' own diagnosis (SetupDiag) concluded"
+
+# Since Windows 10 2004, Setup runs Microsoft's SetupDiag when an upgrade fails and saves the
+# result. It is Microsoft's rule set for upgrade failures and is often the most direct answer.
+$sdFiles = @("$env:windir\Logs\SetupDiag\SetupDiagResults.xml",
+             "$sysDrive\Windows.old\Windows\Logs\SetupDiag\SetupDiagResults.xml") |
+    Where-Object { Test-Path -LiteralPath $_ }
+$sdShown = $false
+
+foreach ($sdPath in $sdFiles) {
+    try { [xml] $sdDoc = Get-Content -LiteralPath $sdPath -Raw -ErrorAction Stop }
+    catch { Add-Line "$sdPath - present but could not be read: $($_.Exception.Message)"; continue }
+
+    # Matched by local name: the file carries a namespace that has changed between versions.
+    $pick = { param($n) $x = $sdDoc.SelectSingleNode("//*[local-name()='$n']"); if ($x) { $x.InnerText.Trim() } }
+
+    Add-Line "$sdPath"
+    Add-Line "  (written $((Get-Item -LiteralPath $sdPath).LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss')))"
+    $sdProfile = & $pick 'ProfileName'
+    Add-Line ("  Matched  : " + $(if ($sdProfile) { $sdProfile } else { '(no known failure pattern)' }))
+    $sdErr = & $pick 'ErrorCode'; $sdExt = & $pick 'ExtendedErrorCode'
+    if ($sdErr -or $sdExt) { Add-Line "  Error    : $sdErr  extended $sdExt" }
+    foreach ($m in $sdDoc.SelectNodes("//*[local-name()='FailureData']/*[local-name()='Message']")) {
+        Add-Line "  >> $($m.InnerText.Trim())"
+    }
+    # Any device or driver it names, leaving out the machine inventory under SystemInfo.
+    foreach ($leaf in $sdDoc.SelectNodes("//*[not(*)]")) {
+        if ($leaf.LocalName -match '(?i)driver|hardwareid|infname|device' -and $leaf.InnerText.Trim() -and
+            -not $leaf.SelectSingleNode("ancestor::*[local-name()='SystemInfo']")) {
+            Add-Line "  DRIVER   : $($leaf.LocalName) = $($leaf.InnerText.Trim())"
+        }
+    }
+    $sdDetails = & $pick 'FailureDetails'
+    if ($sdDetails) { Add-Line "  Details  : $sdDetails" }
+    foreach ($r in $sdDoc.SelectNodes("//*[contains(translate(local-name(),'REMDIATON','remdiaton'),'remediation')][not(*)]")) {
+        if ($r.InnerText.Trim()) { Add-Line "  Fix      : $($r.InnerText.Trim())" }
+    }
+    Add-Line ''
+    $sdShown = $true
+}
+
+if (-not $sdShown) {
+    # The registry copy survives when the file has been tidied away.
+    $sdKey = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\Setup\SetupDiag\Results' -ErrorAction SilentlyContinue
+    if ($sdKey) {
+        Add-Line 'From the registry (HKLM\SYSTEM\Setup\SetupDiag\Results):'
+        foreach ($prop in $sdKey.PSObject.Properties | Where-Object { $_.Name -notlike 'PS*' }) {
+            Add-Line "  $($prop.Name) : $(($prop.Value | Out-String).Trim())"
+        }
+        $sdShown = $true
+    }
+}
+
+if (-not $sdShown) {
+    Add-Line 'No SetupDiag result on this PC. Windows writes one when an upgrade fails, so either none has'
+    Add-Line 'failed here or a later attempt cleared it. Run-SetupDiag.ps1 runs it on demand if setupdiag.exe'
+    Add-Line 'is available.'
+}
+
+# ---------------------------------------------------------------- 4. the crash
+
+Add-Heading '4. Did the machine crash, and while installing what?'
 
 # The name on the crash screen (DRIVER_PNP_WATCHDOG) is never written to a Setup log, so
 # searching the logs for it finds nothing. The evidence is elsewhere:
@@ -338,9 +400,9 @@ if ($cutOff) {
 
 Remove-Item -LiteralPath $copyRoot -Recurse -Force -ErrorAction SilentlyContinue
 
-# ---------------------------------------------------------------- 4. the failing driver
+# ---------------------------------------------------------------- 5. the failing driver
 
-Add-Heading '4. Device drivers that failed to install'
+Add-Heading '5. Device drivers that failed to install'
 
 # The failed attempt's logs live in a setupapi subfolder of Rollback, not beside setupact.log.
 $apiLogs = @(Get-ChildItem -Path "$sysDrive\`$WINDOWS.~BT\Sources" -Filter 'setupapi.dev*.log' -Recurse -ErrorAction SilentlyContinue |
@@ -398,7 +460,7 @@ if (-not $foundDriver) {
 
 # ---------------------------------------------------------------- state and drivers
 
-Add-Heading '5. Machine state'
+Add-Heading '6. Machine state'
 
 $reboot = @()
 if (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending') { $reboot += 'component servicing' }
@@ -413,7 +475,7 @@ foreach ($folder in @("$sysDrive\`$WINDOWS.~BT", "$sysDrive\Windows.old", "$sysD
     Add-Line "$($folder.PadRight(16)): $(if (Test-Path -LiteralPath $folder) { 'exists' } else { 'absent' })"
 }
 
-Add-Heading '6. Third-party driver packages'
+Add-Heading '7. Third-party driver packages'
 Add-Line 'If the same model upgrades fine elsewhere, this list and the BIOS version above'
 Add-Line 'are where the two machines differ. Compare before looking anywhere else.'
 Add-Line ''

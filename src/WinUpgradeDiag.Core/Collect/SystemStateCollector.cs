@@ -76,6 +76,9 @@ namespace WinUpgradeDiag.Core.Collect
 
             Step(state, progress, cancellationToken, "Listing filter drivers", () => state.FilterDrivers = new FilterDriverCollector().Collect());
 
+            Step(state, progress, cancellationToken, "Reading Windows' own upgrade diagnosis", () =>
+                state.SetupDiag = SetupDiagResultsReader.ReadRegistry());
+
             Step(state, progress, cancellationToken, "Checking the ConfigMgr client", () =>
             {
                 state.CcmClient = new CcmClientHealthCollector().Collect();
