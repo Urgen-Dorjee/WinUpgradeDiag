@@ -263,7 +263,10 @@ namespace WinUpgradeDiag.App.ViewModels
                     var whereToFind = ParameterSuggestion.WhereToFind(tool, _contextProvider());
                     if (!string.IsNullOrWhiteSpace(whereToFind))
                     {
-                        help = whereToFind + (string.IsNullOrWhiteSpace(help) ? "" : "\n\n" + help);
+                        // One sentence, not two: the context-aware guidance ON TOP of the static help
+                        // printed the same instruction twice in slightly different words,
+                        // which reads as a malfunction rather than as advice.
+                        help = whereToFind;
                     }
                 }
 

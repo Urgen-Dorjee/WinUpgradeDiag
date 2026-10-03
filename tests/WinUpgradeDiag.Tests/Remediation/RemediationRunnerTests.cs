@@ -235,12 +235,26 @@ namespace WinUpgradeDiag.Tests.Remediation
         }
 
         [Fact]
-        public void Every_destructive_tool_demands_a_typed_confirmation()
+        public void Every_destructive_tool_demands_an_acknowledgement()
         {
             var destructive = ToolCatalog.All.Where(t => t.Risk == RemediationRisk.Destructive).ToList();
 
             Assert.NotEmpty(destructive);
-            Assert.All(destructive, t => Assert.True(t.RequiresTypedConfirmation, t.Id));
+
+            // The gate is a claim, not a transcription. Typing the script name proved only that
+            // the operator could copy it from the line above the box; the acknowledgement states
+            // the specific irreversible consequence and makes them assert something the tool
+            // cannot check for itself.
+            Assert.All(destructive, t =>
+            {
+                Assert.False(t.RequiresTypedConfirmation, t.Id + " still asks for a typed name.");
+                Assert.True(t.RequiresAcknowledgement,
+                    t.Id + " is destructive but states no consequence to acknowledge.");
+
+                // And it has to say what is lost, not merely "are you sure".
+                Assert.True(t.Acknowledgement.Length > 40,
+                    t.Id + " acknowledgement is too vague: " + t.Acknowledgement);
+            });
         }
 
         [Fact]

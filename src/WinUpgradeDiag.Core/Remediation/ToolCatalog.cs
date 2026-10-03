@@ -129,7 +129,18 @@ namespace WinUpgradeDiag.Core.Remediation
         public bool RequiresAcknowledgement => !string.IsNullOrWhiteSpace(Acknowledgement);
 
         /// <summary>Destructive actions require the operator to type a confirmation word.</summary>
-        public bool RequiresTypedConfirmation => Risk == RemediationRisk.Destructive;
+        /// <summary>
+        /// Always false. Kept so the shape of the confirmation is explicit rather than implied.
+        /// <para>
+        /// Destructive tools used to demand the script name be typed. The dialog printed that name
+        /// on the line directly above the box, so the exercise was transcription: copy eighteen
+        /// characters from one line to the next. That is friction without safety — it proves the
+        /// operator can read, not that they have decided anything. The gate that works is the
+        /// acknowledgement, which states the specific irreversible consequence and makes the
+        /// operator claim something the tool cannot check for itself.
+        /// </para>
+        /// </summary>
+        public bool RequiresTypedConfirmation => false;
     }
 
     /// <summary>
@@ -266,6 +277,9 @@ namespace WinUpgradeDiag.Core.Remediation
                     BootedNormally,
                     "The retry will download the whole image again — several gigabytes."
                 },
+                acknowledgement:
+                    "I accept that the partial download is discarded and the whole image is " +
+                    "downloaded again from the start.",
                 parameterName: "ContentId",
                 parameterPrompt: "ContentId of the OS package (the multi-gigabyte item)",
                 parameterExample: "e.g. ABC00123",
@@ -284,7 +298,10 @@ namespace WinUpgradeDiag.Core.Remediation
                     "Remove cache records whose folder no longer exists.",
                     "Start CcmExec and trigger a machine policy refresh."
                 },
-                new[] { LiveUpgradeGuard, BootedNormally, "The retry will download the image again from the start." }),
+                new[] { LiveUpgradeGuard, BootedNormally, "The retry will download the image again from the start." },
+                acknowledgement:
+                    "I accept that the client content cache is rebuilt and the image is downloaded " +
+                    "again from the start."),
 
             new ToolDefinition(
                 "FIX-D", "Fix-D-SetupLeftovers.ps1",
@@ -302,7 +319,10 @@ namespace WinUpgradeDiag.Core.Remediation
                     LiveUpgradeGuard,
                     "C:\\Windows.old must NOT exist. If it does, this machine may have upgraded successfully and \"Reclaim space after a successful upgrade\" is the correct tool instead.",
                     "Export this tool's evidence bundle first if the failure still needs investigating — this deletes the Setup logs from their original location."
-                }),
+                },
+                acknowledgement:
+                    "I have confirmed this machine is not part way through an upgrade and this folder " +
+                    "is left over from an attempt that already ended."),
 
             new ToolDefinition(
                 "RESET-TS", "Reset-TSHistory.ps1",

@@ -78,13 +78,14 @@ namespace WinUpgradeDiag.Tests.Remediation
         // ---------------------------------------------------------------- the second gate
 
         [Fact]
-        public void Reclaiming_space_demands_an_explicit_acknowledgement_as_well_as_a_typed_name()
+        public void Reclaiming_space_demands_an_explicit_acknowledgement()
         {
             var tool = ToolCatalog.ById("REMOVE-LEFTOVERS");
 
-            // Typing a script name proves you read the title. It cannot prove anyone checked the
-            // machine actually works, which is the fact this action depends on.
-            Assert.True(tool.RequiresTypedConfirmation);
+            // Typing a script name proved you could read it off the line above the box. It could
+            // not prove anyone had checked the machine actually works, which is the fact this
+            // action depends on and the one thing the tool cannot establish for itself.
+            Assert.False(tool.RequiresTypedConfirmation);
             Assert.True(tool.RequiresAcknowledgement);
             Assert.Contains("working correctly", tool.Acknowledgement);
         }
@@ -113,7 +114,12 @@ namespace WinUpgradeDiag.Tests.Remediation
                 .OrderBy(id => id, StringComparer.Ordinal)
                 .ToList();
 
-            Assert.Equal(new[] { "REBUILD-CLIENT", "REMOVE-LEFTOVERS" }, withAck);
+            // Every destructive tool now carries one. That is not inflation: the acknowledgement
+            // replaced a typed script name the dialog printed on the line above the box, so the
+            // gate went from transcription to a claim the operator has to actually make.
+            Assert.Equal(
+                new[] { "FIX-A", "FIX-C", "FIX-D", "REBUILD-CLIENT", "REMOVE-LEFTOVERS" },
+                withAck);
         }
 
         // ---------------------------------------------------------------- the crash
