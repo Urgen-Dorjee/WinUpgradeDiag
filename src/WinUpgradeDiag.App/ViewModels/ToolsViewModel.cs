@@ -401,6 +401,39 @@ namespace WinUpgradeDiag.App.ViewModels
                     row.ParameterValue = suggested;
                 }
             }
+
+            RefreshStandings();
+        }
+
+        /// <summary>
+        /// Marks each tool as recommended, available, or not applicable to this machine, and sorts
+        /// so the one the diagnosis points at is first. Nothing is hidden: a tool ruled out keeps
+        /// its place with the reason, because "there is no Windows.old here" is worth knowing, and
+        /// a technician who disagrees must still be able to run it.
+        /// </summary>
+        public void RefreshStandings()
+        {
+            var context = _contextProvider();
+
+            foreach (var row in Tools)
+            {
+                row.Standing = ToolRelevance.For(row.Tool, context);
+            }
+
+            var ordered = ToolRelevance.Order(Tools.Select(r => r.Tool), context);
+            for (var target = 0; target < ordered.Count; target++)
+            {
+                var current = Tools.IndexOf(Tools.First(r => ReferenceEquals(r.Tool, ordered[target])));
+                if (current != target)
+                {
+                    Tools.Move(current, target);
+                }
+            }
+
+            var recommended = Tools.FirstOrDefault(r => r.IsRecommended);
+            Status = recommended != null
+                ? "The diagnosis points at “" + recommended.Title + "”. It is first in the list."
+                : "No single tool is indicated. Start with a read-only check.";
         }
 
         /// <summary>

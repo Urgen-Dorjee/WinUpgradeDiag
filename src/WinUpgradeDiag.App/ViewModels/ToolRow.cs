@@ -47,5 +47,40 @@ namespace WinUpgradeDiag.App.ViewModels
         }
 
         public string ExpanderGlyph => IsExpanded ? "Hide details" : "What will this do?";
+
+        /// <summary>
+        /// Where this tool stands against the machine that was just diagnosed. Set after a run.
+        /// <para>
+        /// Six of the twelve tools are called "Fix: ..." and differ only in a parenthetical.
+        /// Choosing between them is the diagnosis, which is the one thing a technician arrives
+        /// without — and the run has already worked it out.
+        /// </para>
+        /// </summary>
+        private ToolVerdict _standing = new ToolVerdict(ToolStanding.Available, null);
+        public ToolVerdict Standing
+        {
+            get => _standing;
+            set
+            {
+                if (Set(ref _standing, value))
+                {
+                    OnPropertyChanged(nameof(IsRecommended));
+                    OnPropertyChanged(nameof(IsNotApplicable));
+                    OnPropertyChanged(nameof(StandingReason));
+                    OnPropertyChanged(nameof(HasStandingReason));
+                    OnPropertyChanged(nameof(StandingLabel));
+                }
+            }
+        }
+
+        public bool IsRecommended => Standing.IsRecommended;
+        public bool IsNotApplicable => Standing.IsNotApplicable;
+        public string StandingReason => Standing.Reason;
+        public bool HasStandingReason => !string.IsNullOrWhiteSpace(Standing.Reason);
+
+        public string StandingLabel =>
+            Standing.IsRecommended ? "START HERE"
+            : Standing.IsNotApplicable ? "DOES NOT APPLY TO THIS MACHINE"
+            : "";
     }
 }

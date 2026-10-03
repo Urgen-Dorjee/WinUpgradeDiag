@@ -825,6 +825,40 @@
                                         <DataTemplate>
                                             <Border Style="{StaticResource Card}" Margin="0,0,0,10" Padding="15">
                                                 <StackPanel>
+                                                    <!-- Where this tool stands against the machine
+                                                         just diagnosed. Six tools are called
+                                                         "Fix: ..." and differ by a parenthetical;
+                                                         choosing between them is the diagnosis,
+                                                         which the run has already done. -->
+                                                    <Border Margin="0,0,0,10" Padding="9,6" CornerRadius="4"
+                                                            Background="{StaticResource GoodBg}"
+                                                            BorderBrush="{StaticResource GoodFg}" BorderThickness="1"
+                                                            Visibility="{Binding IsRecommended, Converter={StaticResource BoolToVisibility}}">
+                                                        <StackPanel>
+                                                            <TextBlock Style="{StaticResource ChipText}"
+                                                                       Foreground="{StaticResource GoodFg}"
+                                                                       Text="{Binding StandingLabel}" />
+                                                            <TextBlock Style="{StaticResource CaptionText}" Margin="0,3,0,0"
+                                                                       TextWrapping="Wrap"
+                                                                       Foreground="{StaticResource Ink900}"
+                                                                       Text="{Binding StandingReason}" />
+                                                        </StackPanel>
+                                                    </Border>
+
+                                                    <Border Margin="0,0,0,10" Padding="9,6" CornerRadius="4"
+                                                            Background="{StaticResource SurfaceMuted}"
+                                                            BorderBrush="{StaticResource Line200}" BorderThickness="1"
+                                                            Visibility="{Binding IsNotApplicable, Converter={StaticResource BoolToVisibility}}">
+                                                        <StackPanel>
+                                                            <TextBlock Style="{StaticResource ChipText}"
+                                                                       Foreground="{StaticResource Ink500}"
+                                                                       Text="{Binding StandingLabel}" />
+                                                            <TextBlock Style="{StaticResource CaptionText}" Margin="0,3,0,0"
+                                                                       TextWrapping="Wrap"
+                                                                       Text="{Binding StandingReason}" />
+                                                        </StackPanel>
+                                                    </Border>
+
                                                     <DockPanel>
                                                         <Border DockPanel.Dock="Left" Style="{StaticResource Chip}" Margin="0,0,10,0"
                                                                 Background="{Binding RiskSeverity, Converter={StaticResource SeverityToBackground}}"
