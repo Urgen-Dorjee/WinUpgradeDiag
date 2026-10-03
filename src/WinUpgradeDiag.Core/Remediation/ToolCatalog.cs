@@ -26,8 +26,10 @@ namespace WinUpgradeDiag.Core.Remediation
             string parameterExample = null,
             string parameterHelp = null,
             bool runsUntilStopped = false,
-            string acknowledgement = null)
+            string acknowledgement = null,
+            string useWhen = null)
         {
+            UseWhen = useWhen;
             Id = id;
             ScriptName = scriptName;
             Title = title;
@@ -51,8 +53,25 @@ namespace WinUpgradeDiag.Core.Remediation
         public string Purpose { get; }
         public RemediationRisk Risk { get; }
 
-        /// <summary>Menu grouping: "Diagnose" or "Recover".</summary>
+        /// <summary>
+        /// The area the problem is in — Inspect, Downloads and Software Center, Windows upgrade,
+        /// ConfigMgr client. Grouping by area is how a technician thinks about a fault ("it's the
+        /// client", "it's the download"); the old Diagnose / Fix / Recover split grouped by what the
+        /// script does, and nobody could say why rebuilding the client was "Fix" while clearing a
+        /// stuck upgrade was "Recover".
+        /// </summary>
         public string Category { get; }
+
+        /// <summary>
+        /// The symptom, in the words of someone looking at the screen, that says this is the tool.
+        /// <para>
+        /// The single most important line on the card. Tools used to be named after their causes
+        /// and told apart by a parenthetical — "interrupted during Setup (keeps the download)"
+        /// against "interrupted while downloading (discards the download)" — which only helps a
+        /// reader who already knows the diagnosis. A technician knows what they can see.
+        /// </para>
+        /// </summary>
+        public string UseWhen { get; }
 
         public IReadOnlyList<string> Steps { get; }
         public IReadOnlyList<string> Preconditions { get; }
@@ -155,25 +174,40 @@ namespace WinUpgradeDiag.Core.Remediation
         private const string BootedNormally =
             "The machine must have booted normally back into Windows.";
 
-        public static IReadOnlyList<ToolDefinition> All { get; } = new List<ToolDefinition>
+        /// <summary>The order tools are presented in. Every tool must appear exactly once.</summary>
+        public static readonly IReadOnlyList<string> DisplayOrder = new[]
+        {
+            "CHECK-STATE", "LIST-CACHE", "GET-PROGRESS", "WATCH-SMSTS", "FIX-E", "FIX-C", "RESET-TS", "FIX-B", "FIX-A", "FIX-D", "REMOVE-LEFTOVERS", "REPAIR-CLIENT", "REBUILD-CLIENT"
+        };
+
+        private static IReadOnlyList<ToolDefinition> Ordered()
+        {
+            return Definitions
+                .OrderBy(t =>
+                {
+                    var index = Array.IndexOf((string[])DisplayOrder, t.Id);
+                    return index < 0 ? int.MaxValue : index;
+                })
+                .ToList();
+        }
+
+        private static readonly IReadOnlyList<ToolDefinition> Definitions = new List<ToolDefinition>
         {
             // ---------------------------------------------------------------- diagnose
             new ToolDefinition(
                 "CHECK-STATE", "Check-UpgradeState.ps1",
-                "Check upgrade state",
-                "Reports whether a task sequence is running or orphaned, plus disk, folder and Setup progress. Changes nothing.",
-                RemediationRisk.ReadOnly, "Diagnose",
+                "Check whether an upgrade is still running",
+                "Reports whether a task sequence is running or orphaned, plus disk space, upgrade folders and Setup progress. Changes nothing.",
+                RemediationRisk.ReadOnly, "Inspect",
                 new[] { "Report process, WMI, folder, disk and Setup-progress state." },
-                new string[0]),
+                new string[0],
+                useWhen: "You can't tell whether an upgrade is still working, has stopped, or never started."),
 
             new ToolDefinition(
                 "REBUILD-CLIENT", "Rebuild-CcmClient.ps1",
-                "Rebuild a broken ConfigMgr client",
-                "For a client whose WMI provider will not load: the Configuration Manager applet will not " +
-                "open, Software Center is empty, and CcmExec starts then stops. Removes the client " +
-                "completely and reinstalls it with the management point set explicitly. Try the " +
-                "lighter \"repair the ConfigMgr client\" first — this is what to do when that fails.",
-                RemediationRisk.Destructive, "Fix",
+                "Reinstall the ConfigMgr client",
+                "Removes the client completely - services, WMI namespaces, files, registry and certificates - and reinstalls it with the site and management point set explicitly.",
+                RemediationRisk.Destructive, "ConfigMgr client",
                 new[]
                 {
                     "Stop and delete CcmExec, ccmsetup, smstsmgr and CmRcService.",
@@ -203,33 +237,36 @@ namespace WinUpgradeDiag.Core.Remediation
                     "to a management point, while /mp: only says where to download the installer from.",
                 acknowledgement:
                     "I have confirmed this machine's client is broken, not merely unregistered, and that " +
-                    "a duplicate device record in the console is acceptable."),
+                    "a duplicate device record in the console is acceptable.",
+                useWhen: "Configuration Manager will not open, or its service starts and then stops. Use when Repair has not worked."),
             new ToolDefinition(
                 "LIST-CACHE", "List-CcmCache.ps1",
-                "List client cache",
-                "Lists cached content with sizes, and flags records pointing at folders that no longer exist. Use it to find the OS package's ContentId.",
-                RemediationRisk.ReadOnly, "Diagnose",
+                "Show downloaded content",
+                "Lists everything in the client cache with its size, and flags records that point at folders which no longer exist.",
+                RemediationRisk.ReadOnly, "Inspect",
                 new[] { "Enumerate CacheInfoEx and report size, location and whether each folder still exists." },
-                new string[0]),
+                new string[0],
+                useWhen: "You need to see what this PC has downloaded and how large it is, or find a package's content ID."),
 
             new ToolDefinition(
                 "GET-PROGRESS", "Get-UpgradeProgress.ps1",
-                "Check a remote machine's Setup progress",
-                "Answers the \"stuck at 99%?\" question for another machine over WinRM, without unlocking it.",
-                RemediationRisk.ReadOnly, "Diagnose",
+                "Check upgrade progress on another PC",
+                "Reads Setup progress, the running upgrade processes and log activity on another PC over WinRM, without signing in to it.",
+                RemediationRisk.ReadOnly, "Inspect",
                 new[] { "Query processes, Setup progress and setupact.log write time on the target machine." },
                 new[] { "WinRM must be reachable on the target machine." },
                 parameterName: "ComputerName",
                 parameterPrompt: "Machine name to query",
                 requiresLocalMachine: false,
                 parameterExample: "e.g. PC001 or WS-1234",
-                parameterHelp: "The NetBIOS or DNS name of the machine that is stuck. Not this machine."),
+                parameterHelp: "The NetBIOS or DNS name of the machine that is stuck. Not this machine.",
+                useWhen: "A user says their PC is stuck near 99% and you can't get to it."),
 
             new ToolDefinition(
                 "WATCH-SMSTS", "Watch-Smsts.ps1",
-                "Watch a remote machine's task sequence log",
-                "Tails smsts.log over the admin share so progress can be watched without unlocking or rebooting the machine.",
-                RemediationRisk.ReadOnly, "Diagnose",
+                "Follow a deployment live on another PC",
+                "Shows the remote PC's task sequence log as it is written, over the admin share, without signing in or restarting it.",
+                RemediationRisk.ReadOnly, "Inspect",
                 new[]
                 {
                     "Locate smsts.log on the target machine.",
@@ -241,14 +278,15 @@ namespace WinUpgradeDiag.Core.Remediation
                 requiresLocalMachine: false,
                 parameterExample: "e.g. PC001 or WS-1234",
                 parameterHelp: "The machine whose task sequence you want to watch, reached over its admin share.",
-                runsUntilStopped: true),
+                runsUntilStopped: true,
+                useWhen: "You want to watch a task sequence run step by step on a remote PC."),
 
             // ---------------------------------------------------------------- recover
             new ToolDefinition(
                 "FIX-B", "Fix-B-SetupInterrupted.ps1",
-                "Fix: interrupted during Setup (keeps the download)",
-                "For a machine interrupted during \"Windows upgrade progress: xx%\". Clears the orphaned task sequence and leaves the downloaded image alone, so the retry does not start from zero.",
-                RemediationRisk.Disruptive, "Recover",
+                "Reset an upgrade interrupted during Setup",
+                "Clears the orphaned task sequence so the upgrade can be retried, and keeps the downloaded Windows image so the retry does not start from zero.",
+                RemediationRisk.Disruptive, "Windows upgrade",
                 new[]
                 {
                     "Stop the ConfigMgr client service (CcmExec).",
@@ -258,13 +296,14 @@ namespace WinUpgradeDiag.Core.Remediation
                     "Trigger a machine policy refresh.",
                     "Leave the client cache untouched."
                 },
-                new[] { LiveUpgradeGuard, BootedNormally }),
+                new[] { LiveUpgradeGuard, BootedNormally },
+                useWhen: "The PC restarted part way through the upgrade and Software Center shows \"Installing\u2026\" forever. Keeps the downloaded files."),
 
             new ToolDefinition(
                 "FIX-A", "Fix-A-DownloadInterrupted.ps1",
-                "Fix: interrupted while downloading (discards the download)",
-                "For a machine interrupted during \"Downloading install.wim\". Content downloaded inside a task sequence cannot resume, so the partial copy is deleted and the retry downloads it again.",
-                RemediationRisk.Destructive, "Recover",
+                "Reset an upgrade interrupted during download",
+                "Clears the orphaned task sequence and deletes the partial Windows image, which cannot resume, so the retry downloads it in full.",
+                RemediationRisk.Destructive, "Windows upgrade",
                 new[]
                 {
                     "Stop CcmExec, clear the execution request, delete C:\\_SMSTaskSequence.",
@@ -283,14 +322,15 @@ namespace WinUpgradeDiag.Core.Remediation
                 parameterName: "ContentId",
                 parameterPrompt: "ContentId of the OS package (the multi-gigabyte item)",
                 parameterExample: "e.g. ABC00123",
-                parameterHelp: "Run \"List client cache\" first: it is the item several gigabytes in size. " +
-                               "A diagnostic run fills this in automatically when it can identify the package."),
+                parameterHelp: "Run \"Show downloaded content\" first: it is the item several gigabytes in size. " +
+                               "A diagnostic run fills this in automatically when it can identify the package.",
+                useWhen: "The upgrade stopped while it was still downloading the Windows image. Deletes the partial download."),
 
             new ToolDefinition(
                 "FIX-C", "Fix-C-CacheCleared.ps1",
-                "Fix: ccmcache was cleared or deleted",
-                "For a machine whose cache was emptied, especially by hand in Explorer, leaving WMI records pointing at folders that are gone.",
-                RemediationRisk.Destructive, "Recover",
+                "Repair the cache after it was deleted by hand",
+                "Clears the client's records of cached content whose folders no longer exist, recreates the cache folder if it is gone, and refreshes policy so the content downloads again.",
+                RemediationRisk.Destructive, "Downloads and Software Center",
                 new[]
                 {
                     "Stop CcmExec, clear the execution request, delete C:\\_SMSTaskSequence.",
@@ -301,13 +341,14 @@ namespace WinUpgradeDiag.Core.Remediation
                 new[] { LiveUpgradeGuard, BootedNormally, "The retry will download the image again from the start." },
                 acknowledgement:
                     "I accept that the client content cache is rebuilt and the image is downloaded " +
-                    "again from the start."),
+                    "again from the start.",
+                useWhen: "Someone deleted C:\\Windows\\ccmcache in Explorer, and downloads now fail or never start."),
 
             new ToolDefinition(
                 "FIX-D", "Fix-D-SetupLeftovers.ps1",
-                "Fix: remove a half-built Setup folder",
-                "For a retry that fails immediately inside Setup, or a full disk. Saves the Setup logs first, then deletes C:\\$WINDOWS.~BT.",
-                RemediationRisk.Destructive, "Recover",
+                "Remove files left by a failed upgrade",
+                "Saves the Setup logs, then deletes C:\\$WINDOWS.~BT so the next attempt starts clean and the space is freed.",
+                RemediationRisk.Destructive, "Windows upgrade",
                 new[]
                 {
                     "Copy setup*.log and smsts.log to a dated folder under C:\\Temp.",
@@ -322,16 +363,14 @@ namespace WinUpgradeDiag.Core.Remediation
                 },
                 acknowledgement:
                     "I have confirmed this machine is not part way through an upgrade and this folder " +
-                    "is left over from an attempt that already ended."),
+                    "is left over from an attempt that already ended.",
+                useWhen: "A previous upgrade failed and left C:\\$WINDOWS.~BT behind, and the next attempt will not start."),
 
             new ToolDefinition(
                 "FIX-E", "Fix-E-StuckDownload.ps1",
-                "Fix: Software Center stuck at a percentage forever",
-                "For an application - not a task sequence - that sits at the same percentage and whose " +
-                "Cancel button does nothing. The percentage is held by a download job, not by the cache, " +
-                "so emptying ccmcache in Explorer does not clear it and re-targeting the device does not " +
-                "either.",
-                RemediationRisk.Destructive, "Recover",
+                "Clear a stuck download",
+                "Cancels the download jobs holding the percentage, clears cache records for folders that are gone, then restarts the client and asks Software Center to re-evaluate, so the download starts again from the beginning.",
+                RemediationRisk.Destructive, "Downloads and Software Center",
                 new[]
                 {
                     "Report the BITS, DataTransferService and ContentTransferManager jobs in flight.",
@@ -350,13 +389,14 @@ namespace WinUpgradeDiag.Core.Remediation
                 },
                 acknowledgement:
                     "I accept that every download in progress on this machine is cancelled and will " +
-                    "start again from the beginning."),
+                    "start again from the beginning.",
+                useWhen: "An item in Software Center has sat at the same percentage for hours and Cancel does nothing."),
 
             new ToolDefinition(
                 "RESET-TS", "Reset-TSHistory.ps1",
-                "Fix: clear a deployment's run history",
-                "For when Software Center still refuses to start the task sequence after another fix has run.",
-                RemediationRisk.Disruptive, "Recover",
+                "Let a deployment run again",
+                "Deletes this deployment's run history on the PC and refreshes policy, so Software Center offers it again.",
+                RemediationRisk.Disruptive, "Downloads and Software Center",
                 new[]
                 {
                     "Delete the execution history registry key for the given package.",
@@ -367,21 +407,23 @@ namespace WinUpgradeDiag.Core.Remediation
                 parameterPrompt: "Task sequence package ID",
                 parameterExample: "e.g. ABC00456",
                 parameterHelp: "The TASK SEQUENCE package id from execmgr.log or the ConfigMgr console. " +
-                               "This is NOT the content id used by the download fix."),
+                               "This is NOT the content id used by the download fix.",
+                useWhen: "You've fixed the cause, but Software Center still won't start the deployment again."),
 
             new ToolDefinition(
                 "REPAIR-CLIENT", "Repair-CcmClient.ps1",
-                "Fix: repair the ConfigMgr client",
-                "Last resort before escalating. Runs ccmrepair, which hands off to ccmsetup and can take several minutes.",
-                RemediationRisk.Disruptive, "Recover",
+                "Repair the ConfigMgr client",
+                "Runs ccmrepair, which repairs the client in place without removing it. Can take several minutes.",
+                RemediationRisk.Disruptive, "ConfigMgr client",
                 new[] { "Start ccmrepair.exe and report the tail of ccmsetup.log." },
-                new[] { LiveUpgradeGuard, "Run a Setup-interrupted fix afterwards, then retry the deployment." }),
+                new[] { LiveUpgradeGuard, "Run a Setup-interrupted fix afterwards, then retry the deployment." },
+                useWhen: "The client is installed and partly working, but actions fail or policy is not arriving. Try this first."),
 
             new ToolDefinition(
                 "REMOVE-LEFTOVERS", "Remove-UpgradeLeftovers.ps1",
-                "Reclaim space after a successful upgrade",
-                "Retires Windows.old and C:\\$WINDOWS.~BT together through DISM. They are one rollback set — removing either alone breaks \"Go back\" while the other keeps wasting space.",
-                RemediationRisk.Destructive, "Recover",
+                "Free disk space after a successful upgrade",
+                "Removes Windows.old and C:\\$WINDOWS.~BT together through DISM. They are one rollback set, so removing only one breaks \"Go back\" while the other keeps using space.",
+                RemediationRisk.Destructive, "Windows upgrade",
                 new[]
                 {
                     "Report how many days of rollback remain.",
@@ -398,8 +440,37 @@ namespace WinUpgradeDiag.Core.Remediation
                 },
                 acknowledgement:
                     "I have confirmed with the user that this machine is working correctly after the upgrade, " +
-                    "and that they will not need to roll back.")
+                    "and that they will not need to roll back.",
+                useWhen: "The upgrade worked, the user is happy with it, and you need the space Windows.old is taking.")
         };
+
+        /// <summary>
+        /// The catalogue in display order: read-only inspection first, then by area, least drastic
+        /// first within each. Group order on the Tools tab follows from this.
+        /// </summary>
+        public static IReadOnlyList<ToolDefinition> All { get; } = Ordered();
+
+        /// <summary>
+        /// One line under each group heading, saying what the tools in it have in common and how
+        /// careful to be. A heading alone does not tell someone that everything under "Inspect"
+        /// is safe to click.
+        /// </summary>
+        public static string GroupDescription(string group)
+        {
+            switch (group)
+            {
+                case "Inspect":
+                    return "Read-only. These look and report; they never change anything on this PC.";
+                case "Downloads and Software Center":
+                    return "For deployments that are stuck, will not download, or will not start again.";
+                case "Windows upgrade":
+                    return "For a Windows 10 to 11 upgrade that was interrupted, failed, or has finished.";
+                case "ConfigMgr client":
+                    return "For when the ConfigMgr client itself is broken. Try Repair before Reinstall.";
+                default:
+                    return null;
+            }
+        }
 
         public static ToolDefinition ById(string id)
         {

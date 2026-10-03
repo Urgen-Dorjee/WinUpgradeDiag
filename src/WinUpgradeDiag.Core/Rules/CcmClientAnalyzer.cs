@@ -114,7 +114,7 @@ namespace WinUpgradeDiag.Core.Rules
                 "A repair will not fix this, and neither will re-running ccmsetup: ccmsetup queries the " +
                 "same broken provider and fails with the same code. The client has to be removed by hand — " +
                 "services, WMI namespaces, C:\\Windows\\CCM, ccmcache, SMSCFG.ini, the registry keys and the " +
-                "SMS certificate store — then reinstalled. Run Rebuild-CcmClient.ps1 from the Tools tab, " +
+                "SMS certificate store — then reinstalled. Use \"Reinstall the ConfigMgr client\" on the Tools tab, " +
                 "which does exactly that and reboots between the two halves.",
                 evidence);
         }
@@ -144,7 +144,7 @@ namespace WinUpgradeDiag.Core.Rules
                     Confidence.High,
                     "C:\\Windows\\CCM is present but CcmExec is not registered as a service, which is what " +
                     "a partially removed or partially installed client looks like.",
-                    "Finish the removal and reinstall cleanly. Rebuild-CcmClient.ps1 on the Tools tab does both halves.",
+                    "Finish the removal and reinstall cleanly. \"Reinstall the ConfigMgr client\" on the Tools tab does both halves.",
                     new[] { new Evidence("Services", null, "CcmExec is not installed") });
             }
 

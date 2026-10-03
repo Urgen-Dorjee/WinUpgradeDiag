@@ -22,6 +22,13 @@ namespace WinUpgradeDiag.App.ViewModels
         public string Risk => Tool.RiskText;
         public string RiskSeverity => Tool.RiskSeverity;
         public string Category => Tool.Category;
+
+        /// <summary>The symptom that says this is the tool — the line read before anything else.</summary>
+        public string UseWhen => Tool.UseWhen;
+        public bool HasUseWhen => !string.IsNullOrWhiteSpace(Tool.UseWhen);
+
+        /// <summary>Read by the group heading, which binds to its first item.</summary>
+        public string GroupDescription => ToolCatalog.GroupDescription(Tool.Category);
         public IReadOnlyList<string> Steps => Tool.Steps;
         public IReadOnlyList<string> Preconditions => Tool.Preconditions;
         public bool HasPreconditions => Tool.Preconditions.Count > 0;

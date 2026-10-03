@@ -829,8 +829,15 @@
                                         <GroupStyle>
                                             <GroupStyle.HeaderTemplate>
                                                 <DataTemplate>
-                                                    <TextBlock Style="{StaticResource HeadingText}" Margin="0,6,0,8"
-                                                               Text="{Binding Name}" />
+                                                    <StackPanel Margin="0,10,0,10">
+                                                        <TextBlock Style="{StaticResource HeadingText}"
+                                                                   Text="{Binding Name}" />
+                                                        <!-- What the group has in common and how careful to
+                                                             be. A bare heading does not tell anyone that
+                                                             everything under Inspect is safe to click. -->
+                                                        <TextBlock Style="{StaticResource CaptionText}" Margin="0,3,0,0"
+                                                                   Text="{Binding Items[0].GroupDescription}" />
+                                                    </StackPanel>
                                                 </DataTemplate>
                                             </GroupStyle.HeaderTemplate>
                                         </GroupStyle>
@@ -892,18 +899,35 @@
                                                                 Command="{Binding DataContext.PreviewToolCommand,
                                                                           RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                                 CommandParameter="{Binding}" />
-                                                        <StackPanel>
+                                                        <StackPanel VerticalAlignment="Center">
                                                             <TextBlock Style="{StaticResource BodyText}" FontWeight="SemiBold"
                                                                        FontSize="14" Foreground="{StaticResource Ink900}"
                                                                        Text="{Binding Title}" />
-                                                            <TextBlock Style="{StaticResource CaptionText}" Margin="0,2,0,0"
-                                                                       FontFamily="{StaticResource MonoFont}"
-                                                                       Text="{Binding ScriptName}" />
                                                         </StackPanel>
                                                     </DockPanel>
 
-                                                    <TextBlock Style="{StaticResource BodyText}" Margin="0,10,0,0"
-                                                               Text="{Binding Purpose}" />
+                                                    <!-- The symptom, in the words of someone looking at the
+                                                         screen: the line that tells a technician this is the
+                                                         tool, so it comes straight after the name. The script
+                                                         filename used to sit here; it is an implementation
+                                                         detail and has moved into the details panel. -->
+                                                    <DockPanel Margin="0,10,0,0"
+                                                               Visibility="{Binding HasUseWhen, Converter={StaticResource BoolToVisibility}}">
+                                                        <TextBlock DockPanel.Dock="Left" Style="{StaticResource ChipText}"
+                                                                   Foreground="{StaticResource Brand500}" Width="92"
+                                                                   Margin="0,2,0,0" Text="USE WHEN" />
+                                                        <TextBlock Style="{StaticResource BodyText}" TextWrapping="Wrap"
+                                                                   Foreground="{StaticResource Ink900}"
+                                                                   Text="{Binding UseWhen}" />
+                                                    </DockPanel>
+
+                                                    <DockPanel Margin="0,6,0,0">
+                                                        <TextBlock DockPanel.Dock="Left" Style="{StaticResource ChipText}"
+                                                                   Foreground="{StaticResource Ink500}" Width="92"
+                                                                   Margin="0,2,0,0" Text="WHAT IT DOES" />
+                                                        <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap"
+                                                                   Text="{Binding Purpose}" />
+                                                    </DockPanel>
 
                                                     <Border Margin="0,8,0,0" Padding="8,5" CornerRadius="3"
                                                             HorizontalAlignment="Left"
@@ -944,6 +968,12 @@
                                                             BorderBrush="{StaticResource Line200}" BorderThickness="1"
                                                             Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVisibility}}">
                                                         <StackPanel>
+                                                            <TextBlock Style="{StaticResource ChipText}"
+                                                                       Foreground="{StaticResource Ink500}" Text="RUNS" />
+                                                            <TextBlock Style="{StaticResource CaptionText}" Margin="0,4,0,12"
+                                                                       FontFamily="{StaticResource MonoFont}"
+                                                                       Foreground="{StaticResource Ink700}"
+                                                                       Text="{Binding ScriptName}" />
                                                             <TextBlock Style="{StaticResource ChipText}"
                                                                        Foreground="{StaticResource Ink500}" Text="IT WILL" />
                                                             <ItemsControl ItemsSource="{Binding Steps}" Margin="0,5,0,0">

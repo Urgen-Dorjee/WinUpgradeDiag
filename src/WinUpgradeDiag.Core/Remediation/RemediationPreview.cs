@@ -244,7 +244,7 @@ namespace WinUpgradeDiag.Core.Remediation
                         "Cache item " + (contentId ?? "(none given)"),
                         "no cache item with that id",
                         false,
-                        "The delete would find nothing. Check the id against List client cache."));
+                        "The delete would find nothing. Check the id against Show downloaded content."));
             }
 
             var wrongId = targets.Any(t => t.What.StartsWith("Cache item", StringComparison.Ordinal) && !t.WillChange);

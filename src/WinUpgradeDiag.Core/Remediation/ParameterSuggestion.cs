@@ -88,10 +88,10 @@ namespace WinUpgradeDiag.Core.Remediation
             {
                 case "contentid":
                     return context?.SystemState?.CcmCache == null
-                        ? "Run a diagnostic first and this fills in by itself. Otherwise run \"List client cache\" " +
+                        ? "Run a diagnostic first and this fills in by itself. Otherwise run \"Show downloaded content\" " +
                           "from this tab: it is the item several gigabytes in size."
                         : "No cached item was large enough to be the OS image, so there may be no partial " +
-                          "download to discard. Check with \"List client cache\" before running this.";
+                          "download to discard. Check with \"Show downloaded content\" before running this.";
 
                 case "tspackageid":
                     return "Run a diagnostic first and this fills in by itself when a task sequence is " +

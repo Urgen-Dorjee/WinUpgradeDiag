@@ -79,7 +79,8 @@ namespace WinUpgradeDiag.Tests.Rules
 
             // The advice has to say that the obvious fixes do not work, because they do not.
             Assert.Contains("will not fix this", finding.Action, StringComparison.Ordinal);
-            Assert.Contains("Rebuild-CcmClient.ps1", finding.Action, StringComparison.Ordinal);
+            // Advice names the tool as the operator sees it, not the script behind it.
+            Assert.Contains("Reinstall the ConfigMgr client", finding.Action, StringComparison.Ordinal);
         }
 
         /// <summary>
