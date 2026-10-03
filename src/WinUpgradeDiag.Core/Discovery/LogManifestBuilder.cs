@@ -50,7 +50,10 @@ namespace WinUpgradeDiag.Core.Discovery
             string[] matches;
             try
             {
-                matches = Directory.GetFiles(source.Path, source.SearchPattern ?? "*.*");
+                matches = Directory.GetFiles(
+                    source.Path,
+                    source.SearchPattern ?? "*.*",
+                    source.Recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly);
             }
             catch (UnauthorizedAccessException ex)
             {

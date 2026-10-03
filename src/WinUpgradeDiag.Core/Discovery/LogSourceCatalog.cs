@@ -58,14 +58,19 @@ namespace WinUpgradeDiag.Core.Discovery
                 "setup-rollback-act", LogSourceCategory.SetupRollback, "setupact.log (rollback)",
                 "What Setup was doing right before it decided to revert to Windows 10.",
                 Path.Combine(rollback, "setupact.log"), highValue: true));
+            // Searched recursively. Setup writes the failed attempt's driver logs into a setupapi
+            // subfolder of Rollback, not next to setupact.log, so a fixed path at the top of the
+            // folder reported them absent on the very machines that needed them - including one
+            // that had bugchecked with DRIVER_PNP_WATCHDOG, whose answer is in exactly that file.
             sources.Add(new LogSource(
-                "setup-rollback-apilog", LogSourceCategory.SetupRollback, "setupapi.dev.log (rollback)",
-                "Device/driver install activity during the failed upgrade attempt.",
-                Path.Combine(rollback, "setupapi.dev.log"), highValue: true));
+                "setup-rollback-apilog", LogSourceCategory.SetupRollback, "setupapi logs (rollback)",
+                "Device and driver install activity from the failed attempt, including any install " +
+                "that was cut off when the machine crashed.",
+                rollback, LogSourceKind.DirectoryGlob, "setupapi*.log", highValue: true, recursive: true));
             sources.Add(new LogSource(
-                "setup-current-apilog", LogSourceCategory.SetupCurrent, "setupapi.dev.log (current attempt)",
-                "Device/driver install activity for the attempt in progress.",
-                Path.Combine(pantherCurrent, "setupapi.dev.log"), highValue: true));
+                "setup-current-apilog", LogSourceCategory.SetupCurrent, "setupapi logs (current attempt)",
+                "Device and driver install activity for the attempt in progress.",
+                pantherCurrent, LogSourceKind.DirectoryGlob, "setupapi*.log", highValue: true, recursive: true));
             sources.Add(new LogSource(
                 "setup-rollback-dmp", LogSourceCategory.SetupRollback, "setupmem.dmp (rollback)",
                 "Present only if the machine bugchecked during the upgrade.",

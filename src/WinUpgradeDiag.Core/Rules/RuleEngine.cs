@@ -38,6 +38,7 @@ namespace WinUpgradeDiag.Core.Rules
         private readonly TaskSequenceFailureAnalyzer _taskSequenceFailures = new TaskSequenceFailureAnalyzer();
         private readonly DriverInstallAnalyzer _driverInstalls = new DriverInstallAnalyzer();
         private readonly CcmClientAnalyzer _ccmClient = new CcmClientAnalyzer();
+        private readonly BugCheckAnalyzer _bugChecks = new BugCheckAnalyzer();
 
         public Verdict Evaluate(
             DiagnosticContext context,
@@ -79,6 +80,10 @@ namespace WinUpgradeDiag.Core.Rules
             // The client itself. A dead client explains every deployment symptom downstream of it,
             // and working that out by hand is a long afternoon of one command at a time.
             findings.AddRange(_ccmClient.Analyze(context, progress, cancellationToken));
+
+            // The crash and its stop code, from the dump header or the event logs Setup saved before
+            // rolling back, and the device whose install the crash cut off.
+            findings.AddRange(_bugChecks.Analyze(context, progress, cancellationToken));
 
             var ranked = Rank(findings);
 
@@ -739,7 +744,8 @@ namespace WinUpgradeDiag.Core.Rules
         /// </summary>
         private static bool QuotesTheFailure(string id)
         {
-            return id.StartsWith("CC-10", StringComparison.Ordinal) ||
+            return id.StartsWith("BC-10", StringComparison.Ordinal) ||
+                   id.StartsWith("CC-10", StringComparison.Ordinal) ||
                    id.StartsWith("SU-10", StringComparison.Ordinal) ||
                    id.StartsWith("TS-10", StringComparison.Ordinal) ||
                    id.StartsWith("DR-10", StringComparison.Ordinal);

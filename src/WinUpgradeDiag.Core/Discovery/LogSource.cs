@@ -25,6 +25,13 @@ namespace WinUpgradeDiag.Core.Discovery
         /// </summary>
         public bool HighValue { get; }
 
+        /// <summary>
+        /// Search subfolders as well, for a DirectoryGlob. Windows Setup puts the driver logs for a
+        /// failed attempt in a "setupapi" subfolder of Rollback rather than beside setupact.log, so
+        /// a search of the top folder alone reported them as absent.
+        /// </summary>
+        public bool Recursive { get; }
+
         public LogSource(
             string id,
             LogSourceCategory category,
@@ -33,8 +40,10 @@ namespace WinUpgradeDiag.Core.Discovery
             string path,
             LogSourceKind kind = LogSourceKind.File,
             string searchPattern = null,
-            bool highValue = false)
+            bool highValue = false,
+            bool recursive = false)
         {
+            Recursive = recursive;
             Id = id;
             Category = category;
             DisplayName = displayName;

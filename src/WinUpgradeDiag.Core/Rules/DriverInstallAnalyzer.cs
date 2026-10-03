@@ -11,6 +11,25 @@ using WinUpgradeDiag.Core.Orchestration;
 
 namespace WinUpgradeDiag.Core.Rules
 {
+    /// <summary>A device install that was running when Windows went down, and when it next started.</summary>
+    public sealed class InterruptedInstall
+    {
+        public InterruptedInstall(string section, DateTime? startedUtc, DateTime? nextBootUtc)
+        {
+            Section = section;
+            StartedUtc = startedUtc;
+            NextBootUtc = nextBootUtc;
+        }
+
+        /// <summary>The section header, e.g. "Device Install (Hardware initiated) - PCI\\VEN_10EC...".</summary>
+        public string Section { get; }
+
+        public DateTime? StartedUtc { get; }
+
+        /// <summary>The boot that followed — close to the moment of the crash.</summary>
+        public DateTime? NextBootUtc { get; }
+    }
+
     /// <summary>
     /// Names the device and driver that failed to install, from setupapi.dev.log.
     /// <para>
@@ -314,6 +333,103 @@ namespace WinUpgradeDiag.Core.Rules
         {
             var trimmed = (line ?? "").Trim();
             return trimmed.Length <= 400 ? trimmed : trimmed.Substring(0, 400) + "…";
+        }
+
+        /// <summary>"[Boot Session: 2026/09/25 22:21:05.500]" — written at every start of Windows.</summary>
+        private static readonly Regex BootSession = new Regex(
+            @"^\[Boot Session:\s*(?<when>\d{4}/\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2})",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+        private static readonly Regex SectionEnd = new Regex(
+            @"^<<<\s*(?:Section end|\[Exit status)",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+        /// <summary>
+        /// Device installs that were running when Windows went down: opened, never closed, and
+        /// followed by the start of the next boot.
+        /// <para>
+        /// This is how a PnP watchdog names its driver in this log. A crash does not get as far as
+        /// writing FAILURE — the machine is gone before the section can be closed — so looking only
+        /// for failed exit statuses, as this analyser did, finds nothing on exactly the machines
+        /// that bugchecked. What the crash leaves behind is a section that started and then stops
+        /// mid-flight, with the next line being Windows booting again.
+        /// </para>
+        /// <para>
+        /// A section still open at the end of the file is ignored: that is an install in progress
+        /// now, not one that was cut off.
+        /// </para>
+        /// </summary>
+        public static IReadOnlyList<InterruptedInstall> FindInterrupted(IEnumerable<string> lines)
+        {
+            var found = new List<InterruptedInstall>();
+            string open = null;
+            DateTime? openedAt = null;
+
+            foreach (var raw in lines ?? new string[0])
+            {
+                var line = raw ?? "";
+
+                var boot = BootSession.Match(line);
+                if (boot.Success)
+                {
+                    if (open != null && IsDeviceInstall(open))
+                    {
+                        found.Add(new InterruptedInstall(open, openedAt, ParseTime(boot.Groups["when"].Value)));
+                    }
+                    open = null;
+                    openedAt = null;
+                    continue;
+                }
+
+                var start = SectionStart.Match(line);
+                if (start.Success)
+                {
+                    open = start.Groups["what"].Value.Trim();
+                    openedAt = null;
+                    continue;
+                }
+
+                if (open != null)
+                {
+                    var when = SectionTime.Match(line);
+                    if (when.Success)
+                    {
+                        openedAt = ParseTime(when.Groups["when"].Value);
+                        continue;
+                    }
+
+                    if (SectionEnd.IsMatch(line))
+                    {
+                        open = null;
+                        openedAt = null;
+                    }
+                }
+            }
+
+            return found;
+        }
+
+        /// <summary>The hardware id in a section header, for looking the device up.</summary>
+        public static string HardwareIdOf(string section)
+        {
+            var m = HardwareId.Match(section ?? "");
+            return m.Success ? m.Groups["id"].Value : null;
+        }
+
+        /// <summary>The oem*.inf in a section header, for removing the package.</summary>
+        public static string OemInfOf(string section)
+        {
+            var m = OemInf.Match(section ?? "");
+            return m.Success ? m.Groups["inf"].Value : null;
+        }
+
+        private static DateTime? ParseTime(string text)
+        {
+            DateTime parsed;
+            return DateTime.TryParseExact(text, "yyyy/MM/dd HH:mm:ss", CultureInfo.InvariantCulture,
+                       DateTimeStyles.AssumeLocal, out parsed)
+                ? parsed.ToUniversalTime()
+                : (DateTime?)null;
         }
 
         private sealed class DeviceFailure

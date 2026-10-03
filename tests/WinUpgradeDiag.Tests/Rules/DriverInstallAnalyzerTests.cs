@@ -288,17 +288,20 @@ namespace WinUpgradeDiag.Tests.Rules
         [Fact]
         public void The_catalogue_looks_for_the_driver_log_where_Windows_keeps_it()
         {
-            var paths = LogSourceCatalog.GetDefaultSources()
-                .Select(s => s.Path ?? "")
-                .Where(p => p.IndexOf("setupapi.dev.log", StringComparison.OrdinalIgnoreCase) >= 0)
-                .ToList();
+            var sources = LogSourceCatalog.GetDefaultSources();
 
-            Assert.Contains(paths, p => p.IndexOf(Path.Combine("INF", "setupapi.dev.log"),
+            // The live log, always present.
+            Assert.Contains(sources, s => (s.Path ?? "").IndexOf(Path.Combine("INF", "setupapi.dev.log"),
                 StringComparison.OrdinalIgnoreCase) >= 0);
-            Assert.Contains(paths, p => p.IndexOf(Path.Combine("Rollback", "setupapi.dev.log"),
-                StringComparison.OrdinalIgnoreCase) >= 0);
-            Assert.Contains(paths, p => p.IndexOf(Path.Combine("Panther", "setupapi.dev.log"),
-                StringComparison.OrdinalIgnoreCase) >= 0);
+
+            // The failed attempt's logs, searched through subfolders: Setup writes them into a
+            // setupapi folder under Rollback, which a fixed path beside setupact.log never found.
+            var rollback = sources.Single(s => s.Id == "setup-rollback-apilog");
+            Assert.True(rollback.Recursive);
+            Assert.Equal("setupapi*.log", rollback.SearchPattern);
+
+            var current = sources.Single(s => s.Id == "setup-current-apilog");
+            Assert.True(current.Recursive);
         }
     }
 }
