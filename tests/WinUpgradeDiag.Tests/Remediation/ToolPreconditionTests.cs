@@ -118,7 +118,7 @@ namespace WinUpgradeDiag.Tests.Remediation
             // replaced a typed script name the dialog printed on the line above the box, so the
             // gate went from transcription to a claim the operator has to actually make.
             Assert.Equal(
-                new[] { "FIX-A", "FIX-C", "FIX-D", "REBUILD-CLIENT", "REMOVE-LEFTOVERS" },
+                new[] { "FIX-A", "FIX-C", "FIX-D", "FIX-E", "REBUILD-CLIENT", "REMOVE-LEFTOVERS" },
                 withAck);
         }
 

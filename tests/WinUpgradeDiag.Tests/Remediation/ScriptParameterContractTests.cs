@@ -60,17 +60,55 @@ namespace WinUpgradeDiag.Tests.Remediation
                 .ToList();
         }
 
+        /// <summary>Every parameter the script declares, mandatory or not.</summary>
+        private static readonly Regex AnyParameter = new Regex(
+            @"\[(?:string|int|switch|bool|datetime|long|double)(?:\[\])?\]\s*\$(?<name>\w+)",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static IReadOnlyList<string> AcceptedNames(string scriptName)
+        {
+            return AnyParameter.Matches(ScriptText(scriptName))
+                .Cast<Match>()
+                .Select(m => m.Groups["name"].Value)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        /// <summary>
+        /// Accepted, not necessarily mandatory. A tool may supply an optional parameter — what it
+        /// must never do is pass one the script would reject outright.
+        /// </summary>
         [Fact]
         public void A_tool_that_declares_a_parameter_passes_one_its_script_accepts()
         {
             foreach (var tool in ToolCatalog.All.Where(t => t.RequiresParameter))
             {
-                var declared = MandatoryNames(tool.ScriptName);
+                var accepted = AcceptedNames(tool.ScriptName);
 
                 Assert.True(
-                    declared.Contains(tool.ParameterName, StringComparer.OrdinalIgnoreCase),
+                    accepted.Contains(tool.ParameterName, StringComparer.OrdinalIgnoreCase),
                     tool.Id + " passes -" + tool.ParameterName + " but " + tool.ScriptName +
-                    " declares [" + string.Join(", ", declared) + "].");
+                    " accepts [" + string.Join(", ", accepted) + "].");
+            }
+        }
+
+        /// <summary>
+        /// A tool must not demand a value the script treats as optional: the UI makes the box
+        /// mandatory, so an operator is stopped by a field they should have been able to leave
+        /// blank. That is how Fix-E came to ask for a ContentId it does not need.
+        /// </summary>
+        [Fact]
+        public void A_tool_only_demands_a_value_its_script_actually_requires()
+        {
+            foreach (var tool in ToolCatalog.All.Where(t => t.RequiresParameter))
+            {
+                var mandatory = MandatoryNames(tool.ScriptName);
+
+                Assert.True(
+                    mandatory.Contains(tool.ParameterName, StringComparer.OrdinalIgnoreCase),
+                    tool.Id + " forces a value for -" + tool.ParameterName + ", but " +
+                    tool.ScriptName + " only requires [" + string.Join(", ", mandatory) +
+                    "]. Either the script should demand it or the tool should not.");
             }
         }
 

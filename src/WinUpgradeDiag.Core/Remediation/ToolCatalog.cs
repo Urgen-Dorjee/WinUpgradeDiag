@@ -325,6 +325,34 @@ namespace WinUpgradeDiag.Core.Remediation
                     "is left over from an attempt that already ended."),
 
             new ToolDefinition(
+                "FIX-E", "Fix-E-StuckDownload.ps1",
+                "Fix: Software Center stuck at a percentage forever",
+                "For an application - not a task sequence - that sits at the same percentage and whose " +
+                "Cancel button does nothing. The percentage is held by a download job, not by the cache, " +
+                "so emptying ccmcache in Explorer does not clear it and re-targeting the device does not " +
+                "either.",
+                RemediationRisk.Destructive, "Recover",
+                new[]
+                {
+                    "Report the BITS, DataTransferService and ContentTransferManager jobs in flight.",
+                    "Stop CcmExec.",
+                    "Cancel the BITS transfers that hold the percentage.",
+                    "Remove the DataTransferService and ContentTransferManager job records.",
+                    "Remove cache records pointing at folders that no longer exist.",
+                    "Start CcmExec, then trigger Machine Policy and Application Deployment Evaluation."
+                },
+                new[]
+                {
+                    LiveUpgradeGuard,
+                    "The ConfigMgr client must be installed. The script refuses otherwise.",
+                    "Any download in progress for any deployment is cancelled, not just the stuck one.",
+                    "The content downloads again from the start."
+                },
+                acknowledgement:
+                    "I accept that every download in progress on this machine is cancelled and will " +
+                    "start again from the beginning."),
+
+            new ToolDefinition(
                 "RESET-TS", "Reset-TSHistory.ps1",
                 "Fix: clear a deployment's run history",
                 "For when Software Center still refuses to start the task sequence after another fix has run.",
