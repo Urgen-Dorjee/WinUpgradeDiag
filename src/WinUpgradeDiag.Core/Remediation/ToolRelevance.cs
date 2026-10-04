@@ -153,10 +153,10 @@ namespace WinUpgradeDiag.Core.Remediation
                 }
 
                 case "RESET-TS":
-                    return state.TaskSequenceExecutionRequest != null &&
-                           string.IsNullOrWhiteSpace(state.TaskSequenceExecutionRequest.PackageId)
-                        ? Not("No task sequence package id was found on this machine, so there is no run history " +
-                              "to clear.")
+                    return state.TaskSequenceHistory != null && state.TaskSequenceHistory.Error == null &&
+                           state.TaskSequenceHistory.ToReset == null
+                        ? Not("No task sequence has a failed run recorded on this machine, so nothing is " +
+                              "stopping one from running again.")
                         : null;
 
                 case "REBUILD-CLIENT":

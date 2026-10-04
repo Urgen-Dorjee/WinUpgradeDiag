@@ -33,9 +33,6 @@ namespace WinUpgradeDiag.Core.Remediation
                 case "contentid":
                     return ContentId(context);
 
-                case "tspackageid":
-                    return TaskSequencePackageId(context);
-
                 case "target":
                     return CcmClientHealthCollector.SuggestTarget() ?? string.Empty;
 
@@ -67,12 +64,6 @@ namespace WinUpgradeDiag.Core.Remediation
             return largest?.ContentId ?? string.Empty;
         }
 
-        private static string TaskSequencePackageId(DiagnosticContext context)
-        {
-            var request = context?.SystemState?.TaskSequenceExecutionRequest;
-            return request?.PackageId ?? string.Empty;
-        }
-
         /// <summary>
         /// What to say under a box that could not be filled in, naming the step that would produce
         /// the value. Without this an empty field is just a dead end.
@@ -92,11 +83,6 @@ namespace WinUpgradeDiag.Core.Remediation
                           "from this tab: it is the item several gigabytes in size."
                         : "No cached item was large enough to be the OS image, so there may be no partial " +
                           "download to discard. Check with \"Show downloaded content\" before running this.";
-
-                case "tspackageid":
-                    return "Run a diagnostic first and this fills in by itself when a task sequence is " +
-                           "registered. Otherwise it is in execmgr.log, or in the ConfigMgr console against " +
-                           "the deployment. This is the TASK SEQUENCE id, not the OS package's content id.";
 
                 case "target":
                     return "Run a diagnostic first and this fills in by itself. Otherwise both values are in " +

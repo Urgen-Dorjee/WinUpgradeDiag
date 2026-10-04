@@ -25,7 +25,7 @@ Never run a fix while `TSManager.exe` or `SetupHost.exe` is alive.
 | Software Center stuck on "Installing...", download had finished | `Windows upgrade progress: xx%` | `Fix-B-SetupInterrupted.ps1` |
 | Same, but someone already deleted ccmcache | Either | `Fix-C-CacheCleared.ps1` |
 | Rerun starts then fails fast, or C: nearly full | Either | `Fix-D-SetupLeftovers.ps1`, then retry |
-| Fix ran fine, Software Center still won't launch it | Either | `Reset-TSHistory.ps1` (task sequence package ID) |
+| Fix ran fine, Software Center still won't launch it | Either | `Reset-TSHistory.ps1` (finds the failed task sequence itself) |
 | Nothing above works | Either | `Repair-CcmClient.ps1`, then `Fix-B`, then retry |
 | Upgrade worked, C: is short on space | n/a | `Remove-UpgradeLeftovers.ps1` |
 | PC rebooted itself and came back on the old Windows | Full-screen "Working on updates xx%" | **Nothing.** Windows rolled back and the deployment reports Failed. Click Install again. |

@@ -86,7 +86,7 @@ namespace WinUpgradeDiag.Core.Remediation
                 case "FIX-B": return PreviewTaskSequenceClear(tool);
                 case "FIX-C": return PreviewCacheFix(tool);
                 case "FIX-D": return PreviewSetupLeftovers(tool);
-                case "RESET-TS": return PreviewHistoryReset(tool, parameterValue);
+                case "RESET-TS": return PreviewHistoryReset(tool);
                 case "REPAIR-CLIENT": return PreviewClientRepair(tool);
                 case "REMOVE-LEFTOVERS": return PreviewRemoveLeftovers(tool);
                 default:
@@ -305,39 +305,36 @@ namespace WinUpgradeDiag.Core.Remediation
                       "if the failure still needs investigating.");
         }
 
-        private static PreviewReport PreviewHistoryReset(ToolDefinition tool, string packageId)
+        private static PreviewReport PreviewHistoryReset(ToolDefinition tool)
         {
-            var key = @"HKLM\SOFTWARE\Microsoft\SMS\Mobile Client\Software Distribution\Execution History\System\" +
-                      (packageId ?? "(none given)");
+            // The same choice the script makes: the most recent task sequence whose last run failed.
+            var history = TaskSequenceHistoryReader.Read();
+            var chosen = history.ToReset;
 
-            var exists = false;
-            try
+            var targets = new List<PreviewTarget>();
+            if (chosen != null)
             {
-                using (var hive = Microsoft.Win32.RegistryKey.OpenBaseKey(
-                           Microsoft.Win32.RegistryHive.LocalMachine, Microsoft.Win32.RegistryView.Default))
-                using (var subKey = hive.OpenSubKey(
-                           @"SOFTWARE\Microsoft\SMS\Mobile Client\Software Distribution\Execution History\System\" + packageId))
+                targets.Add(new PreviewTarget(
+                    "Run history: " + chosen.Describe(), "present", true, "Would be deleted, so it can run again."));
+                foreach (var other in history.Runs.Where(r => r.Failed && r != chosen))
                 {
-                    exists = subKey != null;
+                    targets.Add(new PreviewTarget(
+                        "Run history: " + other.Describe(), "present", false,
+                        "Also failed, but older - left alone."));
                 }
             }
-            catch (Exception)
+            else
             {
-                // Treated as absent; the script reports the same thing.
+                targets.Add(new PreviewTarget(
+                    "Task sequence run history",
+                    history.Error != null ? "could not be read (" + history.Error + ")" : "no failed run recorded",
+                    false, "Nothing to delete."));
             }
-
-            var targets = new List<PreviewTarget>
-            {
-                exists
-                    ? new PreviewTarget("Registry: " + key, "present", true, "Would be deleted.")
-                    : new PreviewTarget("Registry: " + key, "not present", false,
-                        "Nothing to delete — check the package id is the task sequence's, not the content id."),
-                ServiceTarget("CcmExec", "Would be restarted.")
-            };
+            targets.Add(ServiceTarget("CcmExec", "Would be restarted."));
 
             return new PreviewReport(
                 tool, targets, Summarise(targets),
-                exists ? null : "No execution history exists for that package id on this machine.");
+                chosen == null ? "No task sequence has a failed run recorded on this machine." : null);
         }
 
         private static PreviewReport PreviewClientRepair(ToolDefinition tool)

@@ -416,19 +416,19 @@ namespace WinUpgradeDiag.Core.Remediation
             new ToolDefinition(
                 "RESET-TS", "Reset-TSHistory.ps1",
                 "Let a deployment run again",
-                "Deletes this deployment's run history on the PC and refreshes policy, so Software Center offers it again.",
+                "Finds the task sequence whose last run failed on this PC, clears its run history and refreshes policy, so Software Center offers it again.",
                 RemediationRisk.Disruptive, "Downloads and Software Center",
                 new[]
                 {
-                    "Delete the execution history registry key for the given package.",
+                    "Find the task sequence whose last recorded run failed, and name it.",
+                    "Delete that task sequence's execution history. Ones that last succeeded are left alone.",
                     "Restart CcmExec and trigger a machine policy refresh."
                 },
-                new[] { LiveUpgradeGuard, "This is the TASK SEQUENCE package id, not the OS package's content id." },
-                parameterName: "TsPackageId",
-                parameterPrompt: "Task sequence package ID",
-                parameterExample: "e.g. ABC00456",
-                parameterHelp: "The TASK SEQUENCE package id from execmgr.log or the ConfigMgr console. " +
-                               "This is NOT the content id used by the download fix.",
+                new[]
+                {
+                    LiveUpgradeGuard,
+                    "If several task sequences failed, only the most recent is reset; the others are listed."
+                },
                 useWhen: "You've fixed the cause, but Software Center still won't start the deployment again."),
 
             new ToolDefinition(

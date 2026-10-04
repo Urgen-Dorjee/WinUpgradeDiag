@@ -81,15 +81,14 @@ namespace WinUpgradeDiag.Tests.Remediation
             Assert.Equal("ABC00123", ParameterSuggestion.For(Tool("FIX-A"), ContextWith(state)));
         }
 
+        /// <summary>
+        /// Nobody knows a task sequence's package id offhand. The reset tool finds the failed task
+        /// sequence itself, so it must not ask.
+        /// </summary>
         [Fact]
-        public void The_task_sequence_package_id_comes_from_the_execution_request()
+        public void Resetting_a_task_sequence_asks_for_nothing()
         {
-            var state = new SystemState
-            {
-                TaskSequenceExecutionRequest = OrphanedTaskSequenceInfo.Found("ABC00456", "ABC20001")
-            };
-
-            Assert.Equal("ABC00456", ParameterSuggestion.For(Tool("RESET-TS"), ContextWith(state)));
+            Assert.False(Tool("RESET-TS").RequiresParameter);
         }
 
         // ---------------------------------------------------------------- what is not known
@@ -166,28 +165,6 @@ namespace WinUpgradeDiag.Tests.Remediation
                 Assert.True(string.IsNullOrEmpty(suggested),
                     tool.Id + " invented " + suggested + " from an empty diagnostic.");
             }
-        }
-
-        /// <summary>
-        /// The two id parameters are different things and get confused, which is why the help says
-        /// so. Guard that they are never sourced from the same place.
-        /// </summary>
-        [Fact]
-        public void The_content_id_and_the_task_sequence_id_are_not_interchangeable()
-        {
-            var state = new SystemState
-            {
-                CcmCache = new CcmCacheSnapshot
-                {
-                    Elements = new[] { new CcmCacheElement { ContentId = "ABC00123", SizeKilobytes = 5_200_000 } }
-                },
-                TaskSequenceExecutionRequest = OrphanedTaskSequenceInfo.Found("ABC00456", "ABC20001")
-            };
-
-            var context = ContextWith(state);
-
-            Assert.Equal("ABC00123", ParameterSuggestion.For(Tool("FIX-A"), context));
-            Assert.Equal("ABC00456", ParameterSuggestion.For(Tool("RESET-TS"), context));
         }
     }
 }

@@ -49,6 +49,9 @@ namespace WinUpgradeDiag.Core.Collect
                 }
             });
 
+            Step(state, progress, cancellationToken, "Reading task sequence run history", () =>
+                state.TaskSequenceHistory = TaskSequenceHistoryReader.Read());
+
             Step(state, progress, cancellationToken, "Reading ConfigMgr client cache (WMI)", () =>
             {
                 state.CcmCache = new CcmWmiCollector().GetCacheSnapshot();

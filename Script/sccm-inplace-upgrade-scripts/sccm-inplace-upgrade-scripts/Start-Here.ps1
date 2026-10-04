@@ -84,11 +84,9 @@ do {
             Pause-Here
         }
         '5' {
-            Write-Host "`nThis clears the deployment's run history so it can start again." -ForegroundColor Gray
-            Write-Host "The task sequence package ID is in execmgr.log or the ConfigMgr console." -ForegroundColor Gray
-            $ts = (Read-Host "`nTask sequence package ID (blank to cancel)").Trim()
-            if ($ts) { Invoke-Script 'Reset-TSHistory.ps1' @{ TsPackageId = $ts } }
-            else     { 'Cancelled.' }
+            Write-Host "`nThis finds the task sequence that last failed here and clears its run history," -ForegroundColor Gray
+            Write-Host "so Software Center offers it again. You do not need its package ID." -ForegroundColor Gray
+            Invoke-Script 'Reset-TSHistory.ps1'
             Pause-Here
         }
         '6' {
