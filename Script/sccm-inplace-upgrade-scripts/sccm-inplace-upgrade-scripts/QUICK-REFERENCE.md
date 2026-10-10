@@ -28,7 +28,8 @@ Never run a fix while `TSManager.exe` or `SetupHost.exe` is alive.
 | Fix ran fine, Software Center still won't launch it | Either | `Reset-TSHistory.ps1` (finds the failed task sequence itself) |
 | Nothing above works | Either | `Repair-CcmClient.ps1`, then `Fix-B`, then retry |
 | Upgrade worked, C: is short on space | n/a | `Remove-UpgradeLeftovers.ps1` |
-| PC rebooted itself and came back on the old Windows | Full-screen "Working on updates xx%" | **Nothing.** Windows rolled back and the deployment reports Failed. Click Install again. |
+| PC rebooted itself and came back on the old Windows | Full-screen "Working on updates xx%" | Windows rolled back. Click Install again in Software Center. |
+| Rolled back, and Software Center **no longer shows the upgrade** | Crash (e.g. DRIVER_PNP_WATCHDOG) or power loss during the upgrade | `Restore-SoftwareCenterOffer.ps1`. Do **not** wipe WMI or reinstall the client first. |
 
 ---
 

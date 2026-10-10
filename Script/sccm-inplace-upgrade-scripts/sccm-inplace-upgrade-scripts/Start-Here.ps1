@@ -44,6 +44,7 @@ do {
     Write-Host "`n--------------------------------------------------" -ForegroundColor Yellow
     Write-Host " What did you see before it got stuck?" -ForegroundColor Yellow
     Write-Host "--------------------------------------------------"
+    Write-Host " R  Rolled back to Windows 10 - Software Center no longer shows the upgrade"
     Write-Host " 1  Restarted during 'Downloading install.wim (xx%)'"
     Write-Host " 2  Restarted during 'Windows upgrade progress: xx%'"
     Write-Host " 3  Same as above, but ccmcache was cleared/deleted afterwards"
@@ -58,6 +59,13 @@ do {
     $choice = (Read-Host "`nChoice").Trim().ToUpper()
 
     switch ($choice) {
+        'R' {
+            Write-Host "`nThis undoes what a crashed rollback leaves on the ConfigMgr client (provisioning mode," -ForegroundColor Gray
+            Write-Host "a leftover task sequence record), refreshes policy and says what is now offered." -ForegroundColor Gray
+            Write-Host "No WMI rebuild or client reinstall." -ForegroundColor Gray
+            Invoke-Script 'Restore-SoftwareCenterOffer.ps1'
+            Pause-Here
+        }
         '1' {
             Write-Host "`nFix A deletes the partial download and clears the stuck task sequence." -ForegroundColor Gray
             Write-Host "You need the ContentId of the upgrade package (the multi-GB item)." -ForegroundColor Gray

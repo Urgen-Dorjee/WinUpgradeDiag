@@ -34,8 +34,40 @@ namespace WinUpgradeDiag.Core.Collect
             CollectNamespaces(info);
             CollectAssignment(info);
             CollectWmiRepository(info);
+            CollectProvisioningMode(info);
 
             return info;
+        }
+
+        /// <summary>Read from the registry, which answers even when the client's WMI does not.</summary>
+        private static void CollectProvisioningMode(CcmClientHealthInfo info)
+        {
+            try
+            {
+                using (var key = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64)
+                    .OpenSubKey(@"SOFTWARE\Microsoft\CCM\CcmExec"))
+                {
+                    if (key == null)
+                    {
+                        return;
+                    }
+
+                    var mode = key.GetValue("ProvisioningMode")?.ToString();
+                    if (mode != null)
+                    {
+                        info.ProvisioningMode = string.Equals(mode.Trim(), "true", StringComparison.OrdinalIgnoreCase);
+                    }
+
+                    var excludes = key.GetValue("SystemTaskExcludes");
+                    info.SystemTaskExcludes = excludes is string[]
+                        ? string.Join(";", (string[])excludes)
+                        : excludes?.ToString();
+                }
+            }
+            catch (Exception ex)
+            {
+                info.Errors.Add("Could not read provisioning mode: " + ex.Message);
+            }
         }
 
         private static void CollectFolderAndVersion(CcmClientHealthInfo info)

@@ -84,6 +84,7 @@ namespace WinUpgradeDiag.Core.Remediation
             {
                 case "FIX-A": return PreviewDownloadFix(tool, parameterValue);
                 case "FIX-B": return PreviewTaskSequenceClear(tool);
+                case "RESTORE-OFFER": return PreviewRestoreOffer(tool);
                 case "FIX-C": return PreviewCacheFix(tool);
                 case "FIX-D": return PreviewSetupLeftovers(tool);
                 case "RESET-TS": return PreviewHistoryReset(tool);
@@ -208,6 +209,32 @@ namespace WinUpgradeDiag.Core.Remediation
                 FolderTarget(@"C:\_SMSTaskSequence", "Would be deleted."),
                 new PreviewTarget("Client cache", "untouched by this tool", false,
                     "The downloaded image is kept, so a retry does not start from zero.")
+            };
+
+            return new PreviewReport(tool, targets, Summarise(targets), null);
+        }
+
+        private PreviewReport PreviewRestoreOffer(ToolDefinition tool)
+        {
+            var provisioning = new CcmClientHealthCollector().Collect().ProvisioningMode;
+            var failed = TaskSequenceHistoryReader.Read().ToReset;
+
+            var targets = new List<PreviewTarget>
+            {
+                provisioning == true
+                    ? new PreviewTarget("Provisioning mode", "on", true,
+                        "Would be switched off, so the client accepts new policy again.")
+                    : new PreviewTarget("Provisioning mode",
+                        provisioning == false ? "off" : "could not be read", false, "Nothing to change."),
+                ServiceTarget("CcmExec", "Would be stopped, then started again."),
+                ExecutionRequestTarget(),
+                FolderTarget(@"C:\_SMSTaskSequence", "Would be deleted."),
+                failed != null
+                    ? new PreviewTarget("Run history: " + failed.Describe(), "present", true,
+                        "Would be cleared, so it can run again.")
+                    : new PreviewTarget("Task sequence run history", "no failed run", false, "Nothing to clear."),
+                new PreviewTarget("WMI repository and client install", "untouched by this tool", false,
+                    "No WMI rebuild, no uninstall, no new client identity.")
             };
 
             return new PreviewReport(tool, targets, Summarise(targets), null);

@@ -13,11 +13,12 @@
     It answers the questions worth asking, in the order they matter:
 
       1. Which task sequence step failed, and with what code.
-      2. What Windows Setup itself recorded as an error.
-      3. What Microsoft's SetupDiag concluded - Windows runs it itself when an upgrade fails.
-      4. Whether the machine crashed, with which stop code, and which device install the crash
+      2. Why Software Center is not offering the upgrade again after a rollback.
+      3. What Windows Setup itself recorded as an error.
+      4. What Microsoft's SetupDiag concluded - Windows runs it itself when an upgrade fails.
+      5. Whether the machine crashed, with which stop code, and which device install the crash
          cut off - the answer to a DRIVER_PNP_WATCHDOG.
-      5. Which device drivers failed to install.
+      6. Which device drivers failed to install.
 
     Read-only. It opens logs and reads the registry. It changes nothing.
 
@@ -142,9 +143,62 @@ if (-not $smstsFiles) {
     }
 }
 
-# ---------------------------------------------------------------- 2. what Setup recorded
+# ---------------------------------------------------------------- 2. why Software Center offers nothing
 
-Add-Heading '2. Errors Windows Setup recorded'
+Add-Heading "2. Why Software Center isn't offering the upgrade again"
+
+# A rollback forced by a crash or power cut skips the step that puts the ConfigMgr client back,
+# leaving it paused (provisioning mode) or believing a task sequence is still running.
+$upgradeLive = [bool](Get-Process TSManager, SetupHost, setupprep -ErrorAction SilentlyContinue)
+$ccmReg = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\CCM\CcmExec' -ErrorAction SilentlyContinue
+$scBlocked = $false
+
+if (-not (Get-Service CcmExec -ErrorAction SilentlyContinue)) {
+    Add-Line 'The ConfigMgr client is not installed, so Software Center has nothing to offer.'
+} elseif ($upgradeLive) {
+    Add-Line 'An upgrade is running right now, so the client is meant to be paused. Nothing to report.'
+} else {
+    if ($ccmReg -and "$($ccmReg.ProvisioningMode)" -eq 'true') {
+        Add-Line '>> CAUSE: the client was left in PROVISIONING MODE, so it ignores all new policy.'
+        if ($ccmReg.SystemTaskExcludes) { Add-Line "   Components switched off: $($ccmReg.SystemTaskExcludes -join '; ')" }
+        $scBlocked = $true
+    } else {
+        Add-Line 'Provisioning mode            : off (fine)'
+    }
+
+    $tsReq = @(Get-CimInstance -Namespace root\ccm\SoftMgmtAgent -ClassName CCM_TSExecutionRequest -ErrorAction SilentlyContinue)
+    if ($tsReq.Count) {
+        Add-Line ">> CAUSE: the client still thinks a task sequence is running ($($tsReq.Count) leftover record(s)), so it will not start another."
+        $scBlocked = $true
+    } else {
+        Add-Line 'Leftover task sequence record: none (fine)'
+    }
+
+    $tsPolicy = @(Get-CimInstance -Namespace root\ccm\policy\machine\actualconfig -ClassName CCM_TaskSequence -ErrorAction SilentlyContinue)
+    if ($tsPolicy.Count) {
+        Add-Line 'Task sequences deployed to this PC:'
+        $tsPolicy | ForEach-Object { Add-Line "   $($_.PKG_Name) ($($_.PKG_PackageID))" }
+    } else {
+        Add-Line 'Task sequences deployed to this PC: NONE in the client''s policy.'
+    }
+
+    Add-Line ''
+    if ($scBlocked) {
+        Add-Line 'FIX: run Restore-SoftwareCenterOffer.ps1 (or "Bring the upgrade back to Software Center" in the'
+        Add-Line 'app). It undoes only these leftovers and refreshes policy. No WMI rebuild or client reinstall needed.'
+    } elseif (-not $tsPolicy.Count) {
+        Add-Line 'Nothing on this PC is blocking it, and no task sequence is deployed to it: the deployment is not'
+        Add-Line 'reaching this PC. Check its target collection on the ConfigMgr server. Reinstalling the client'
+        Add-Line 'only hides this, because the PC registers as a new device with no history.'
+    } else {
+        Add-Line 'Nothing on this PC is blocking the upgrade. If Software Center still hides it, refresh machine'
+        Add-Line 'policy and check the deployment''s availability time and rerun settings on the server.'
+    }
+}
+
+# ---------------------------------------------------------------- 3. what Setup recorded
+
+Add-Heading '3. Errors Windows Setup recorded'
 
 $errLogs = @($paths['setuperr (rollback)'], $paths['setuperr (current)'], $paths['setuperr (completed)'])
 $foundErrors = $false
@@ -188,9 +242,9 @@ if (-not $foundErrors) {
     Add-Line 'No readable setuperr.log. If one exists under $WINDOWS.~BT, re-run this elevated.'
 }
 
-# ---------------------------------------------------------------- 3. Windows' own diagnosis
+# ---------------------------------------------------------------- 4. Windows' own diagnosis
 
-Add-Heading "3. What Windows' own diagnosis (SetupDiag) concluded"
+Add-Heading "4. What Windows' own diagnosis (SetupDiag) concluded"
 
 # Since Windows 10 2004, Setup runs Microsoft's SetupDiag when an upgrade fails and saves the
 # result. It is Microsoft's rule set for upgrade failures and is often the most direct answer.
@@ -249,9 +303,9 @@ if (-not $sdShown) {
     Add-Line 'is available.'
 }
 
-# ---------------------------------------------------------------- 4. the crash
+# ---------------------------------------------------------------- 5. the crash
 
-Add-Heading '4. Did the machine crash, and while installing what?'
+Add-Heading '5. Did the machine crash, and while installing what?'
 
 # The name on the crash screen (DRIVER_PNP_WATCHDOG) is never written to a Setup log, so
 # searching the logs for it finds nothing. The evidence is elsewhere:
@@ -400,9 +454,9 @@ if ($cutOff) {
 
 Remove-Item -LiteralPath $copyRoot -Recurse -Force -ErrorAction SilentlyContinue
 
-# ---------------------------------------------------------------- 5. the failing driver
+# ---------------------------------------------------------------- 6. the failing driver
 
-Add-Heading '5. Device drivers that failed to install'
+Add-Heading '6. Device drivers that failed to install'
 
 # The failed attempt's logs live in a setupapi subfolder of Rollback, not beside setupact.log.
 $apiLogs = @(Get-ChildItem -Path "$sysDrive\`$WINDOWS.~BT\Sources" -Filter 'setupapi.dev*.log' -Recurse -ErrorAction SilentlyContinue |
@@ -460,7 +514,7 @@ if (-not $foundDriver) {
 
 # ---------------------------------------------------------------- state and drivers
 
-Add-Heading '6. Machine state'
+Add-Heading '7. Machine state'
 
 $reboot = @()
 if (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending') { $reboot += 'component servicing' }
@@ -475,7 +529,7 @@ foreach ($folder in @("$sysDrive\`$WINDOWS.~BT", "$sysDrive\Windows.old", "$sysD
     Add-Line "$($folder.PadRight(16)): $(if (Test-Path -LiteralPath $folder) { 'exists' } else { 'absent' })"
 }
 
-Add-Heading '7. Third-party driver packages'
+Add-Heading '8. Third-party driver packages'
 Add-Line 'If the same model upgrades fine elsewhere, this list and the BIOS version above'
 Add-Line 'are where the two machines differ. Compare before looking anywhere else.'
 Add-Line ''

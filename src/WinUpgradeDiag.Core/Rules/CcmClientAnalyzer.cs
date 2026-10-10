@@ -60,7 +60,74 @@ namespace WinUpgradeDiag.Core.Rules
                 findings.Add(assignment);
             }
 
+            var provisioning = FromProvisioningMode(context.SystemState, health);
+            if (provisioning != null)
+            {
+                findings.Add(provisioning);
+            }
+
             return findings;
+        }
+
+        private static readonly string[] UpgradeWorkers = { "TSManager", "SetupHost", "setupprep" };
+
+        /// <summary>
+        /// The client was left in provisioning mode, so Software Center offers nothing.
+        /// <para>
+        /// An in-place upgrade task sequence switches provisioning mode on before Windows Setup
+        /// runs, and relies on a command Setup runs after a rollback to switch it off. When the
+        /// rollback is forced by a crash or a power cut, that command never runs. The machine is
+        /// back on Windows 10 with a client that is installed, running and registered - and that
+        /// ignores every new policy, so the upgrade never reappears. Wiping WMI and reinstalling
+        /// the client "fixes" it only because a new client starts with provisioning mode off.
+        /// </para>
+        /// </summary>
+        private static Finding FromProvisioningMode(SystemState state, CcmClientHealthInfo health)
+        {
+            if (health.ProvisioningMode != true)
+            {
+                return null;
+            }
+
+            // During a live upgrade provisioning mode is supposed to be on.
+            if (state?.Processes != null && UpgradeWorkers.Any(state.Processes.IsRunning))
+            {
+                return null;
+            }
+
+            var evidence = new List<Evidence>
+            {
+                new Evidence(@"Registry: HKLM\SOFTWARE\Microsoft\CCM\CcmExec", null, "ProvisioningMode = true")
+            };
+            if (!string.IsNullOrWhiteSpace(health.SystemTaskExcludes))
+            {
+                evidence.Add(new Evidence(@"Registry: HKLM\SOFTWARE\Microsoft\CCM\CcmExec", null,
+                    "SystemTaskExcludes = " + health.SystemTaskExcludes));
+            }
+            if (state?.TaskSequenceExecutionRequest?.ExecutionRequestExists == true)
+            {
+                evidence.Add(new Evidence(@"WMI: root\ccm\SoftMgmtAgent", null,
+                    "A task sequence execution request is still present, though no task sequence is running"));
+            }
+            evidence.Add(new Evidence("Running processes", null, "No task sequence or Windows Setup is running"));
+
+            return new Finding(
+                "CC-106",
+                "Software Center offers nothing because the client was left in provisioning mode",
+                Severity.Critical,
+                Confidence.High,
+                "The upgrade task sequence puts the ConfigMgr client into provisioning mode before Windows " +
+                "Setup starts, and relies on Setup to switch it back off after a rollback. If the rollback was " +
+                "forced by a crash (such as DRIVER_PNP_WATCHDOG) or a power cut, that step never runs. The " +
+                "client is installed, running and registered, but it ignores all new policy, so the upgrade " +
+                "never reappears in Software Center. Wiping WMI and reinstalling the client only works because " +
+                "a new client starts with provisioning mode off.",
+                "Use \"Bring the upgrade back to Software Center\" on the Tools tab. It switches provisioning " +
+                "mode off, clears the leftover task sequence record, refreshes policy and then tells you whether " +
+                "the upgrade is offered. No WMI rebuild or client reinstall is needed.",
+                evidence,
+                command: "Invoke-CimMethod -Namespace root\\ccm -ClassName SMS_Client -MethodName SetClientProvisioningMode " +
+                         "-Arguments @{ bEnable = $false }");
         }
 
         /// <summary>

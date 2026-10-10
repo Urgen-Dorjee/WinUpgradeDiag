@@ -38,11 +38,33 @@ namespace WinUpgradeDiag.Core.Remediation
             switch (findingId)
             {
                 case "TS-001": return ForOrphanedTaskSequence(state);
+                case "CC-106": return ForProvisioningModeLeftOn();
                 case "CT-002": return ForStaleCache(state);
                 case "SU-006": return ForLowDiskSpace(state);
                 case "SU-003": return ForStaleProgress();
                 default: return null;
             }
+        }
+
+        // ---------------------------------------------------------------- rollback left the client paused
+
+        private static RemediationAction ForProvisioningModeLeftOn()
+        {
+            return new RemediationAction(
+                "RESTORE-OFFER",
+                "Restore-SoftwareCenterOffer.ps1",
+                "Bring the upgrade back to Software Center",
+                "Switches provisioning mode off and clears what the interrupted rollback left, so the client " +
+                "accepts policy again and Software Center offers the upgrade. No WMI rebuild or client reinstall.",
+                RemediationRisk.Disruptive,
+                new[]
+                {
+                    "Switch provisioning mode off.",
+                    "Remove any leftover task sequence record and clear the failed run.",
+                    "Restart CcmExec, refresh policy and report what is offered."
+                },
+                new[] { "TSManager, SetupHost and setupprep must all be stopped." },
+                Command("Restore-SoftwareCenterOffer.ps1"));
         }
 
         // ---------------------------------------------------------------- orphaned task sequence

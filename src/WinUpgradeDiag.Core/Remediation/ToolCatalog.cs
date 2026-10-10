@@ -177,7 +177,7 @@ namespace WinUpgradeDiag.Core.Remediation
         /// <summary>The order tools are presented in. Every tool must appear exactly once.</summary>
         public static readonly IReadOnlyList<string> DisplayOrder = new[]
         {
-            "CHECK-STATE", "RUN-SETUPDIAG", "LIST-CACHE", "GET-PROGRESS", "WATCH-SMSTS", "FIX-E", "FIX-C", "RESET-TS", "FIX-B", "FIX-A", "FIX-D", "REMOVE-LEFTOVERS", "REPAIR-CLIENT", "REBUILD-CLIENT"
+            "CHECK-STATE", "RUN-SETUPDIAG", "LIST-CACHE", "GET-PROGRESS", "WATCH-SMSTS", "FIX-E", "FIX-C", "RESET-TS", "RESTORE-OFFER", "FIX-B", "FIX-A", "FIX-D", "REMOVE-LEFTOVERS", "REPAIR-CLIENT", "REBUILD-CLIENT"
         };
 
         private static IReadOnlyList<ToolDefinition> Ordered()
@@ -303,6 +303,27 @@ namespace WinUpgradeDiag.Core.Remediation
                 useWhen: "You want to watch a task sequence run step by step on a remote PC."),
 
             // ---------------------------------------------------------------- recover
+            new ToolDefinition(
+                "RESTORE-OFFER", "Restore-SoftwareCenterOffer.ps1",
+                "Bring the upgrade back to Software Center",
+                "Undoes what a crashed or interrupted rollback leaves on the ConfigMgr client - provisioning mode left on, a 'task sequence running' record, the failed run - then refreshes policy and reports what Software Center can now offer.",
+                RemediationRisk.Disruptive, "Windows upgrade",
+                new[]
+                {
+                    "Report provisioning mode, any leftover task sequence record and the failed task sequence.",
+                    "Switch provisioning mode off.",
+                    "Stop CcmExec, remove the leftover task sequence record and working folder.",
+                    "Clear the failed task sequence's run history so it can run again.",
+                    "Start CcmExec, refresh machine policy, and list the task sequences Software Center can offer."
+                },
+                new[]
+                {
+                    LiveUpgradeGuard,
+                    "Does not rebuild WMI, uninstall the client or touch the client cache.",
+                    "If nothing is offered afterwards, the deployment is not reaching this PC: check the target collection on the server."
+                },
+                useWhen: "The upgrade failed and rolled back to Windows 10, and now Software Center doesn't show the upgrade at all. Use this instead of rebuilding WMI and reinstalling the client."),
+
             new ToolDefinition(
                 "FIX-B", "Fix-B-SetupInterrupted.ps1",
                 "Reset an upgrade interrupted during Setup",

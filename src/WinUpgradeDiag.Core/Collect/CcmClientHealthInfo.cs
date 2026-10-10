@@ -52,6 +52,17 @@ namespace WinUpgradeDiag.Core.Collect
         /// </summary>
         public bool? LookupMpAvailable { get; set; }
 
+        /// <summary>
+        /// Whether the client is in provisioning mode, during which it processes no new policy.
+        /// An in-place upgrade task sequence turns it on before Windows Setup and turns it off
+        /// afterwards; a rollback that crashes or loses power can skip the second half, leaving a
+        /// client that looks healthy but never offers anything again. Null when it could not be read.
+        /// </summary>
+        public bool? ProvisioningMode { get; set; }
+
+        /// <summary>The client components provisioning mode has switched off, verbatim.</summary>
+        public string SystemTaskExcludes { get; set; }
+
         /// <summary>WMI repository consistency, from the same check winmgmt /verifyrepository makes.</summary>
         public bool? WmiRepositoryConsistent { get; set; }
 
