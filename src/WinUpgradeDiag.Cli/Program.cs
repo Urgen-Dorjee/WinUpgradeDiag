@@ -397,15 +397,16 @@ Exit codes: 0 ok, 1 export failed, 2 bad arguments, 3 cancelled,
                 Console.Error.WriteLine();
                 Console.Error.WriteLine("Processes running: " +
                     string.Join(", ", s.Processes?.Processes.Where(p => p.IsRunning).Select(p => p.Name) ?? Enumerable.Empty<string>()));
-                var deployment = WinUpgradeDiag.Core.Collect.DeploymentFacts.For(s);
-                if (deployment.Count > 0)
+                var check = WinUpgradeDiag.Core.Rules.SoftwareCenterCheck.For(s, context.Verdict?.Findings,
+                    context.StartedAtUtc == default(DateTime) ? DateTime.UtcNow : context.StartedAtUtc);
+                Console.Error.WriteLine();
+                Console.Error.WriteLine("Why isn't the upgrade offered in Software Center?");
+                Console.Error.WriteLine("  " + check.Conclusion);
+                if (check.HasAction) Console.Error.WriteLine("  What to do: " + check.Action);
+                if (check.HasCommand) Console.Error.WriteLine("  " + check.Command);
+                foreach (var link in check.Links)
                 {
-                    Console.Error.WriteLine();
-                    Console.Error.WriteLine("ConfigMgr deployment:");
-                    foreach (var fact in deployment)
-                    {
-                        Console.Error.WriteLine("  {0,-32} {1}", fact.Key, fact.Value);
-                    }
+                    Console.Error.WriteLine("  {0,-8} {1,-34} {2}", link.StatusText, link.Label, link.Value);
                 }
                 if (s.CollectionErrors.Count > 0)
                 {

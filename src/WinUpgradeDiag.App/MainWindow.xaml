@@ -192,6 +192,76 @@
                                     </StackPanel>
                                 </Border>
 
+                                <!-- Why isn't the upgrade offered in Software Center? -->
+                                <Border Style="{StaticResource Card}" Margin="0,14,0,0"
+                                        DataContext="{Binding SoftwareCenter}"
+                                        Visibility="{Binding DataContext.HasSoftwareCenter, RelativeSource={RelativeSource AncestorType=ScrollViewer}, Converter={StaticResource BoolToVisibility}}"
+                                        BorderBrush="{Binding OverallKey, Converter={StaticResource SeverityToBorder}}">
+                                    <StackPanel>
+                                        <TextBlock Style="{StaticResource ChipText}" Foreground="{StaticResource Ink500}"
+                                                   Text="WHY ISN'T THE UPGRADE OFFERED IN SOFTWARE CENTER?" />
+                                        <TextBlock Style="{StaticResource DisplayText}" FontSize="16" Margin="0,8,0,0"
+                                                   Foreground="{Binding OverallKey, Converter={StaticResource SeverityToForeground}}"
+                                                   TextWrapping="Wrap" Text="{Binding Conclusion, Mode=OneWay}" />
+
+                                        <Border Margin="0,12,0,0" Padding="14" CornerRadius="4"
+                                                Background="{StaticResource Surface}"
+                                                BorderBrush="{StaticResource Line200}" BorderThickness="1"
+                                                Visibility="{Binding HasAction, Converter={StaticResource BoolToVisibility}}">
+                                            <StackPanel>
+                                                <TextBlock Style="{StaticResource ChipText}" Foreground="{StaticResource Ink500}"
+                                                           Text="WHAT TO DO" />
+                                                <TextBlock Style="{StaticResource BodyText}" Margin="0,6,0,0"
+                                                           Foreground="{StaticResource Ink900}" TextWrapping="Wrap"
+                                                           Text="{Binding Action, Mode=OneWay}" />
+                                                <Border Margin="0,12,0,0" Padding="10,8" CornerRadius="4"
+                                                        Background="{StaticResource Ink900}"
+                                                        Visibility="{Binding HasCommand, Converter={StaticResource BoolToVisibility}}">
+                                                    <DockPanel>
+                                                        <Button DockPanel.Dock="Right" Content="Copy"
+                                                                Command="{Binding DataContext.CopySoftwareCenterCommandCommand, RelativeSource={RelativeSource AncestorType=ScrollViewer}}"
+                                                                Style="{StaticResource ButtonBase}"
+                                                                Background="#FF2B3440" Foreground="White"
+                                                                BorderThickness="0" Padding="12,4" Margin="10,0,0,0"
+                                                                VerticalAlignment="Top" />
+                                                        <TextBlock Style="{StaticResource MonoText}" Foreground="#FFE6EDF3"
+                                                                   TextWrapping="Wrap" Text="{Binding Command, Mode=OneWay}" />
+                                                    </DockPanel>
+                                                </Border>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <TextBlock Style="{StaticResource ChipText}" Margin="0,16,0,6"
+                                                   Foreground="{StaticResource Ink500}"
+                                                   Text="THE CHAIN, IN ORDER - THE FIRST PROBLEM IS THE CAUSE" />
+                                        <ItemsControl ItemsSource="{Binding Links}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Margin="0,4">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="78" />
+                                                            <ColumnDefinition Width="230" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <Border Grid.Column="0" Style="{StaticResource Chip}" HorizontalAlignment="Left"
+                                                                VerticalAlignment="Top"
+                                                                Background="{Binding StatusKey, Converter={StaticResource SeverityToBackground}}"
+                                                                BorderBrush="{Binding StatusKey, Converter={StaticResource SeverityToBorder}}">
+                                                            <TextBlock Style="{StaticResource ChipText}"
+                                                                       Foreground="{Binding StatusKey, Converter={StaticResource SeverityToForeground}}"
+                                                                       Text="{Binding StatusText}" />
+                                                        </Border>
+                                                        <TextBlock Grid.Column="1" Style="{StaticResource BodyText}" FontWeight="SemiBold"
+                                                                   Foreground="{StaticResource Ink900}" Text="{Binding Label}" />
+                                                        <TextBlock Grid.Column="2" Style="{StaticResource BodyText}" TextWrapping="Wrap"
+                                                                   Text="{Binding Value}" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+
                                 <!-- Gaps -->
                                 <Border Style="{StaticResource Card}" Margin="0,14,0,0"
                                         Background="{StaticResource WarningBg}" BorderBrush="{StaticResource WarningLine}"

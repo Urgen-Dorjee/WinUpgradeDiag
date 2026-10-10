@@ -285,5 +285,50 @@ namespace WinUpgradeDiag.Tests.Rules
                 Assert.DoesNotContain("Read the rollback setupact.log", verdict.Action.Text, StringComparison.Ordinal);
             }
         }
+
+        /// <summary>
+        /// The field report: a PC already on Windows 11 led with "Setup recorded 12 errors of its
+        /// own", quoted from a setuperr.log last written in December 2024. Those errors belong to
+        /// an attempt that ended long ago and must not be offered as the cause.
+        /// </summary>
+        [Fact]
+        public void Errors_from_an_old_attempt_are_history_not_the_cause()
+        {
+            using (var tmp = new TempDirectory())
+            {
+                var errPath = tmp.File(Path.Combine("Panther", "setuperr.log"), RollbackErr);
+                var actPath = tmp.File(Path.Combine("Panther", "setupact.log"), RollbackAct);
+                File.SetLastWriteTimeUtc(errPath, new DateTime(2024, 12, 15, 7, 41, 55, DateTimeKind.Utc));
+                File.SetLastWriteTimeUtc(actPath, new DateTime(2024, 12, 15, 7, 41, 55, DateTimeKind.Utc));
+
+                var findings = Run(ContextFor(
+                    Entry(errPath, LogSourceCategory.SetupCurrent, "setuperr.log"),
+                    Entry(actPath, LogSourceCategory.SetupCurrent, "setupact.log")));
+
+                foreach (var finding in findings)
+                {
+                    Assert.Equal(Severity.Info, finding.Severity);
+                    Assert.Contains("2024-12-1", finding.Title);
+                    Assert.Contains("not the current problem", finding.Title);
+                }
+                Assert.Contains(findings, f => f.Id == "SU-100");
+            }
+        }
+
+        [Fact]
+        public void Errors_kept_by_an_upgrade_that_completed_are_not_the_cause()
+        {
+            using (var tmp = new TempDirectory())
+            {
+                var errPath = tmp.File(Path.Combine("Panther", "setuperr.log"), RollbackErr);
+                File.SetLastWriteTimeUtc(errPath, new DateTime(2026, 9, 27, 10, 0, 0, DateTimeKind.Utc));
+
+                var finding = Run(ContextFor(Entry(errPath, LogSourceCategory.SetupCompleted, "setuperr.log")))
+                    .Single(f => f.Id == "SU-100");
+
+                Assert.Equal(Severity.Info, finding.Severity);
+                Assert.Contains("completed", finding.Title);
+            }
+        }
     }
 }

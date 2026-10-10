@@ -40,6 +40,14 @@ namespace WinUpgradeDiag.Core.Rules
         private const int ActLogWindowBytes = 8 * 1024 * 1024;
 
         private const int MaxQuotedErrors = 12;
+
+        /// <summary>
+        /// Setup logs older than this before the run describe some earlier attempt. A PC that
+        /// upgraded successfully keeps its setuperr.log for good, and quoting those lines as "the
+        /// cause" on a machine already on Windows 11 sends the reader after a problem that ended
+        /// long ago.
+        /// </summary>
+        private static readonly TimeSpan Stale = TimeSpan.FromDays(30);
         private const int MaxQuotedOperations = 6;
 
         /// <summary>
@@ -78,13 +86,15 @@ namespace WinUpgradeDiag.Core.Rules
                 .Select(g => g.First())
                 .ToList();
 
-            var errorFinding = FromErrorLogs(setupLogs, progress, cancellationToken);
+            var runUtc = context.StartedAtUtc == default(DateTime) ? DateTime.UtcNow : context.StartedAtUtc;
+
+            var errorFinding = FromErrorLogs(setupLogs, runUtc, progress, cancellationToken);
             if (errorFinding != null)
             {
                 findings.Add(errorFinding);
             }
 
-            var operationFinding = FromActivityLogs(setupLogs, progress, cancellationToken);
+            var operationFinding = FromActivityLogs(setupLogs, runUtc, progress, cancellationToken);
             if (operationFinding != null)
             {
                 findings.Add(operationFinding);
@@ -108,7 +118,8 @@ namespace WinUpgradeDiag.Core.Rules
         /// exists only to hold errors, so every line in it is by definition a finding.
         /// </summary>
         private Finding FromErrorLogs(
-            IReadOnlyList<LogManifestEntry> logs, IProgress<string> progress, CancellationToken cancellationToken)
+            IReadOnlyList<LogManifestEntry> logs, DateTime runUtc, IProgress<string> progress,
+            CancellationToken cancellationToken)
         {
             var errorLogs = logs
                 .Where(m => Path.GetFileName(m.ResolvedPath)
@@ -120,6 +131,7 @@ namespace WinUpgradeDiag.Core.Rules
 
             var evidence = new List<Evidence>();
             var codes = new List<string>();
+            var quoted = new List<LogManifestEntry>();
 
             foreach (var log in errorLogs)
             {
@@ -135,6 +147,8 @@ namespace WinUpgradeDiag.Core.Rules
                 {
                     continue;
                 }
+
+                quoted.Add(log);
 
                 // Newest last in the file; newest first is what a reader wants.
                 foreach (var line in Distinct(lines).Reverse().Take(MaxQuotedErrors - evidence.Count))
@@ -162,6 +176,21 @@ namespace WinUpgradeDiag.Core.Rules
                       string.Join(", ", distinctCodes) + "."
                     : "");
 
+            var history = History(quoted, runUtc);
+            if (history != null)
+            {
+                return new Finding(
+                    "SU-100",
+                    "Old Setup errors " + history + " - not the current problem",
+                    Severity.Info,
+                    Confidence.Low,
+                    "setuperr.log on this PC was last written " + history + ". These errors belong to that " +
+                    "attempt, not to anything happening now." +
+                    (distinctCodes.Count > 0 ? " Codes recorded then: " + string.Join(", ", distinctCodes) + "." : ""),
+                    "Ignore these unless the problem you are investigating happened on that date.",
+                    evidence);
+            }
+
             return new Finding(
                 "SU-100",
                 "Setup recorded " + evidence.Count.ToString(CultureInfo.CurrentCulture) +
@@ -183,7 +212,8 @@ namespace WinUpgradeDiag.Core.Rules
         /// Finds the operation Setup was performing when it gave up, from the end of setupact.log.
         /// </summary>
         private Finding FromActivityLogs(
-            IReadOnlyList<LogManifestEntry> logs, IProgress<string> progress, CancellationToken cancellationToken)
+            IReadOnlyList<LogManifestEntry> logs, DateTime runUtc, IProgress<string> progress,
+            CancellationToken cancellationToken)
         {
             var actLogs = logs
                 .Where(m => Path.GetFileName(m.ResolvedPath)
@@ -224,6 +254,20 @@ namespace WinUpgradeDiag.Core.Rules
                         .Select(l => new Evidence(log.ResolvedPath, null, Trim(l)))
                         .ToList();
 
+                    var history = History(new[] { log }, runUtc);
+                    if (history != null)
+                    {
+                        return new Finding(
+                            "SU-101",
+                            "The last thing Setup did, " + history + " - not the current problem",
+                            Severity.Info,
+                            Confidence.Low,
+                            "Taken from the end of " + Path.GetFileName(log.ResolvedPath) + ", which was last written " +
+                            history + ". It describes that attempt, not anything happening now.",
+                            "Ignore this unless the problem you are investigating happened on that date.",
+                            evidence);
+                    }
+
                     return new Finding(
                         "SU-101",
                         "The last thing Setup did before it stopped",
@@ -236,6 +280,40 @@ namespace WinUpgradeDiag.Core.Rules
                         "thing to remove, update or exclude before the next attempt.",
                         evidence);
                 }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// "from 2024-12-15 (an earlier upgrade attempt)" when every quoted log is old or belongs to
+        /// an upgrade that completed; null when they describe a recent attempt.
+        /// </summary>
+        private static string History(IEnumerable<LogManifestEntry> quoted, DateTime runUtc)
+        {
+            var logs = quoted.ToList();
+            if (logs.Count == 0)
+            {
+                return null;
+            }
+
+            var newest = logs.Where(l => l.LastWriteTimeUtc.HasValue)
+                .Select(l => l.LastWriteTimeUtc.Value)
+                .DefaultIfEmpty(DateTime.MinValue)
+                .Max();
+            var date = newest == DateTime.MinValue
+                ? ""
+                : "from " + newest.ToLocalTime().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + " ";
+
+            if (newest != DateTime.MinValue && runUtc - newest > Stale)
+            {
+                return date + "(an earlier upgrade attempt)";
+            }
+
+            // The logs of an upgrade that finished describe a success, whatever errors it tolerated.
+            if (logs.All(l => l.Source.Category == LogSourceCategory.SetupCompleted))
+            {
+                return date + "(an upgrade that completed)";
             }
 
             return null;

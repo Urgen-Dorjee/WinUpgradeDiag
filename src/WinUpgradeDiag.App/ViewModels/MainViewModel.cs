@@ -72,6 +72,8 @@ namespace WinUpgradeDiag.App.ViewModels
                 () => !_isSearching && _selectedManifestRow != null && !string.IsNullOrWhiteSpace(_viewerFilter));
             CancelSearchCommand = new RelayCommand(() => _searchCts?.Cancel(), () => _isSearching);
             CopyCommandCommand = new RelayCommand(CopyCommand, () => HasRecommendedCommand);
+            CopySoftwareCenterCommandCommand = new RelayCommand(
+                () => CopyText(SoftwareCenter?.Command), () => SoftwareCenter?.HasCommand == true);
 
             AboutCommand = new RelayCommand(ShowAbout);
             ExitCommand = new RelayCommand(() => System.Windows.Application.Current?.Shutdown());
@@ -259,12 +261,35 @@ namespace WinUpgradeDiag.App.ViewModels
         public bool HasGaps => Gaps.Count > 0;
         public bool HasFindings => Findings.Count > 0;
 
+        private WinUpgradeDiag.Core.Rules.SoftwareCenterCheck _softwareCenter;
+
+        /// <summary>"Why isn't the upgrade offered in Software Center?", link by link.</summary>
+        public WinUpgradeDiag.Core.Rules.SoftwareCenterCheck SoftwareCenter
+        {
+            get => _softwareCenter;
+            private set
+            {
+                if (Set(ref _softwareCenter, value))
+                {
+                    OnPropertyChanged(nameof(HasSoftwareCenter));
+                }
+            }
+        }
+
+        public bool HasSoftwareCenter => SoftwareCenter != null;
+
+        public RelayCommand CopySoftwareCenterCommandCommand { get; }
+
         private void PopulateVerdict()
         {
             Findings.Clear();
             Gaps.Clear();
 
             var verdict = _context?.Verdict;
+            SoftwareCenter = _context?.SystemState == null
+                ? null
+                : WinUpgradeDiag.Core.Rules.SoftwareCenterCheck.For(_context.SystemState, verdict?.Findings,
+                    _context.StartedAtUtc == default(DateTime) ? DateTime.UtcNow : _context.StartedAtUtc);
             if (verdict == null)
             {
                 DescribeMissingVerdict();
@@ -446,9 +471,14 @@ namespace WinUpgradeDiag.App.ViewModels
 
         private void CopyCommand()
         {
+            CopyText(RecommendedCommand);
+        }
+
+        private static void CopyText(string text)
+        {
             try
             {
-                System.Windows.Clipboard.SetText(RecommendedCommand ?? "");
+                System.Windows.Clipboard.SetText(text ?? "");
             }
             catch (Exception)
             {

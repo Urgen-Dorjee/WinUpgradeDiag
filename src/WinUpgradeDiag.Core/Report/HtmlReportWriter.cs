@@ -65,6 +65,7 @@ namespace WinUpgradeDiag.Core.Report
                   .Append(E(r(context.PrivilegedReadError))).AppendLine("</div>");
             }
 
+            WriteSoftwareCenter(sb, context, r);
             WriteFindings(sb, context, r);
             WriteExamined(sb, context, r);
             WriteSystem(sb, s0, r);
@@ -202,6 +203,7 @@ namespace WinUpgradeDiag.Core.Report
             sb.Append("<a href=\"#findings\">").Append(E(verdict.FindingsHeading)).Append(" (")
               .Append(verdict.Findings.Count).AppendLine(")</a>");
             sb.Append("<a href=\"#examined\">What was examined (").Append(read).AppendLine(" logs read)</a>");
+            sb.AppendLine("<a href=\"#softwarecenter\">Software Center offer</a>");
             sb.AppendLine("<a href=\"#system\">System state</a>");
             sb.Append("<a href=\"#events\">Event log (").Append(events).AppendLine(")</a>");
             sb.AppendLine("</nav>");
@@ -376,6 +378,48 @@ namespace WinUpgradeDiag.Core.Report
             var months = (int)Math.Round(days / 30.44);
             return " (about " + months.ToString(CultureInfo.InvariantCulture) + " months ago — " +
                    "check this is the attempt you are investigating)";
+        }
+
+        // ---------------------------------------------------------------- software center
+
+        /// <summary>
+        /// "Why isn't the upgrade offered in Software Center?", answered link by link, near the top
+        /// so it is not a row in the System table that nobody scrolls to.
+        /// </summary>
+        private static void WriteSoftwareCenter(StringBuilder sb, DiagnosticContext context, Func<string, string> r)
+        {
+            if (context.SystemState == null)
+            {
+                return;
+            }
+
+            var check = Rules.SoftwareCenterCheck.For(context.SystemState, context.Verdict?.Findings,
+                context.StartedAtUtc == default(DateTime) ? DateTime.UtcNow : context.StartedAtUtc);
+            var sev = check.Overall == Rules.LinkStatus.Problem ? "critical"
+                : check.Overall == Rules.LinkStatus.Ok ? "good" : "info";
+
+            sb.AppendLine("<h2 id=\"softwarecenter\">Why isn't the upgrade offered in Software Center?</h2>");
+            sb.Append("<div class=\"finding sev-").Append(sev == "good" ? "info" : sev).AppendLine("\">");
+            sb.Append("<p><strong>").Append(E(r(check.Conclusion))).AppendLine("</strong></p>");
+            if (check.HasAction)
+            {
+                sb.Append("<p>").Append(E(r(check.Action))).AppendLine("</p>");
+            }
+            if (check.HasCommand)
+            {
+                sb.Append("<pre class=\"cmd\">").Append(E(r(check.Command))).AppendLine("</pre>");
+            }
+
+            sb.AppendLine("<table><tr><th style=\"width:9%\"></th><th style=\"width:26%\">Link</th><th>On this PC</th></tr>");
+            foreach (var link in check.Links)
+            {
+                var colour = link.Status == Rules.LinkStatus.Problem ? "#8e1f1f"
+                    : link.Status == Rules.LinkStatus.Ok ? "#1d6234" : "#6b7480";
+                sb.Append("<tr><td style=\"color:").Append(colour).Append(";font-weight:600\">")
+                  .Append(E(link.StatusText)).Append("</td><td>").Append(E(link.Label)).Append("</td><td>")
+                  .Append(E(r(link.Value))).AppendLine("</td></tr>");
+            }
+            sb.AppendLine("</table></div>");
         }
 
         // ---------------------------------------------------------------- system
