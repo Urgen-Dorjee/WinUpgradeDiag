@@ -73,12 +73,6 @@ namespace WinUpgradeDiag.App.ViewModels
             CancelSearchCommand = new RelayCommand(() => _searchCts?.Cancel(), () => _isSearching);
             CopyCommandCommand = new RelayCommand(CopyCommand, () => HasRecommendedCommand);
 
-            // The toolbox is available from the moment the app opens: a technician standing at a
-            // broken machine should not have to run a diagnostic first to reach the fix scripts.
-            Tools = new ToolsViewModel(
-                () => _lastExportDirectory ?? ReportExporter.DefaultOutputRoot,
-                () => _context);
-
             AboutCommand = new RelayCommand(ShowAbout);
             ExitCommand = new RelayCommand(() => System.Windows.Application.Current?.Shutdown());
         }
@@ -94,9 +88,6 @@ namespace WinUpgradeDiag.App.ViewModels
         public RelayCommand CopyCommandCommand { get; }
         public RelayCommand AboutCommand { get; }
         public RelayCommand ExitCommand { get; }
-
-        /// <summary>The recovery-script toolbox.</summary>
-        public ToolsViewModel Tools { get; }
 
         /// <summary>Short form for the header: "v0.1.0 (f34aaba)".</summary>
         public string ToolVersion => "v" + DiagnosticRunner.DisplayVersion;
@@ -172,10 +163,6 @@ namespace WinUpgradeDiag.App.ViewModels
             }
 
             PopulateResults();
-
-            // The run just worked out the content id and the task sequence package id. Put them
-            // into the tool cards so the Tools tab is ready rather than asking for them again.
-            Tools.RefreshSuggestions();
 
             OnPropertyChanged(nameof(OutputPreview));
             LastRunText = "Last run " + DateTime.Now.ToString("HH:mm:ss", CultureInfo.CurrentCulture);
@@ -453,8 +440,7 @@ namespace WinUpgradeDiag.App.ViewModels
                 "WinUpgradeDiag " + DiagnosticRunner.DisplayVersion,
                 "Offline, read-only diagnostic for failed ConfigMgr Windows 10 to 11 in-place upgrades." +
                 Environment.NewLine + Environment.NewLine +
-                "Diagnosis never changes this machine. Recovery tools are separate, confirmed per action, " +
-                "and written to an audit log.",
+                "It reads this machine and changes nothing.",
                 "Build " + DiagnosticRunner.ToolVersion);
         }
 
@@ -509,9 +495,10 @@ namespace WinUpgradeDiag.App.ViewModels
                 AddFact("System drive free space", s.SystemDriveFreeBytes.HasValue
                     ? HtmlReportWriter.Size(s.SystemDriveFreeBytes.Value) + " of " + HtmlReportWriter.Size(s.SystemDriveTotalBytes ?? 0)
                     : null);
-                AddFact("Task sequence execution request in WMI", s.TaskSequenceExecutionRequest == null ? null :
-                    YesNo(s.TaskSequenceExecutionRequest.ExecutionRequestExists) +
-                    (s.TaskSequenceExecutionRequest.PackageId != null ? " (package " + s.TaskSequenceExecutionRequest.PackageId + ")" : ""));
+                foreach (var fact in DeploymentFacts.For(s))
+                {
+                    AddFact(fact.Key, fact.Value);
+                }
                 foreach (var f in s.UpgradeFolders ?? new List<UpgradeFolderInfo>())
                 {
                     AddFact("Folder " + f.Path, f.Exists

@@ -72,8 +72,7 @@ namespace WinUpgradeDiag.Core.Collect
 
         /// <summary>
         /// The largest cached item, which on a machine running an in-place upgrade is the OS
-        /// package. This is the value a technician currently reads off a table by eye to pass to
-        /// the download-recovery script; having it here is what lets the tool fill that in.
+        /// package.
         /// </summary>
         public CcmCacheElement LargestElement =>
             Elements.OrderByDescending(e => e.SizeBytes).FirstOrDefault();

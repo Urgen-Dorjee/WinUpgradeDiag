@@ -49,6 +49,9 @@ namespace WinUpgradeDiag.Core.Collect
                 }
             });
 
+            Step(state, progress, cancellationToken, "Reading what ConfigMgr has deployed to this PC", () =>
+                state.Deployment = new DeploymentStateCollector().Collect());
+
             Step(state, progress, cancellationToken, "Reading task sequence run history", () =>
                 state.TaskSequenceHistory = TaskSequenceHistoryReader.Read());
 

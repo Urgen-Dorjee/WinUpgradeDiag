@@ -320,8 +320,12 @@ namespace WinUpgradeDiag.Tests.Report
             Assert.Contains("check this is the attempt you are investigating", stale, StringComparison.Ordinal);
         }
 
+        /// <summary>
+        /// The report gives the one command for the finding and every link of the deployment chain,
+        /// so whoever reads it does not have to run the queries on the PC by hand.
+        /// </summary>
         [Fact]
-        public void The_report_prescribes_the_recovery_script_with_its_parameters_resolved()
+        public void The_report_gives_the_command_and_the_deployment_facts()
         {
             using (var tmp = new TempDirectory())
             {
@@ -329,24 +333,32 @@ namespace WinUpgradeDiag.Tests.Report
                 var context = ContextWith(tmp, out log, out dump);
                 context.SystemState.TaskSequenceExecutionRequest =
                     WinUpgradeDiag.Core.Collect.OrphanedTaskSequenceInfo.Found("ABC00123", "ABC20001");
-                context.SystemState.UpgradeFolders = new List<WinUpgradeDiag.Core.Collect.UpgradeFolderInfo>
-                {
-                    new WinUpgradeDiag.Core.Collect.UpgradeFolderInfo { Path = @"C:\$WINDOWS.~BT", Exists = true }
-                };
                 context.SystemState.IsElevated = true;
                 context.SystemState.PendingReboot = new WinUpgradeDiag.Core.Collect.PendingRebootState();
                 context.SystemState.SystemDriveFreeBytes = 200L * 1024 * 1024 * 1024;
+                context.SystemState.CcmClient = new WinUpgradeDiag.Core.Collect.CcmClientHealthInfo
+                {
+                    ClientFolderExists = true, CcmExecInstalled = true, CcmExecState = "Running",
+                    CcmNamespaceResponds = true, SiteCode = "ABC", ProvisioningMode = false
+                };
+                var deployment = new WinUpgradeDiag.Core.Collect.DeploymentState
+                {
+                    ClientId = "GUID:NEW-0000-1111", PolicyReadable = true, SoftwareCenterReadable = true
+                };
+                deployment.TaskSequencePolicies.Add(new WinUpgradeDiag.Core.Collect.TaskSequencePolicy
+                {
+                    PackageId = "ABC00123", Name = "Windows 11 upgrade B"
+                });
+                context.SystemState.Deployment = deployment;
                 context.Verdict = new RuleEngine().Evaluate(context);
 
                 var html = HtmlReportWriter.Render(context, TestRedactor);
 
-                Assert.Contains("PRESCRIBED FIX", html);
-                Assert.Contains("Fix-B-SetupInterrupted.ps1", html);
-                Assert.Contains("IT WILL", html);
-                Assert.Contains("ONLY IF", html);
-                // The ticket reader must see the guard rail, not just the command.
-                Assert.Contains("TSManager", html);
-                Assert.Contains("does not run fixes", html);
+                Assert.Contains("CCM_TSExecutionRequest", html);
+                Assert.Contains("ConfigMgr deployment", html);
+                Assert.Contains("GUID:NEW-0000-1111", html);
+                Assert.Contains("Windows 11 upgrade B", html);
+                Assert.DoesNotContain("PRESCRIBED FIX", html);
             }
         }
 

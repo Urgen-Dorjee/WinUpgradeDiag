@@ -40,6 +40,7 @@ namespace WinUpgradeDiag.Core.Rules
         private readonly CcmClientAnalyzer _ccmClient = new CcmClientAnalyzer();
         private readonly BugCheckAnalyzer _bugChecks = new BugCheckAnalyzer();
         private readonly SetupDiagAnalyzer _setupDiag = new SetupDiagAnalyzer();
+        private readonly DeploymentAnalyzer _deployment = new DeploymentAnalyzer();
 
         public Verdict Evaluate(
             DiagnosticContext context,
@@ -82,6 +83,9 @@ namespace WinUpgradeDiag.Core.Rules
             // and working that out by hand is a long afternoon of one command at a time.
             findings.AddRange(_ccmClient.Analyze(context, progress, cancellationToken));
 
+            // Why Software Center is not offering a deployment: identity, polling, targeting.
+            findings.AddRange(_deployment.Analyze(context, progress, cancellationToken));
+
             // The crash and its stop code, from the dump header or the event logs Setup saved before
             // rolling back, and the device whose install the crash cut off.
             findings.AddRange(_bugChecks.Analyze(context, progress, cancellationToken));
@@ -90,12 +94,6 @@ namespace WinUpgradeDiag.Core.Rules
             findings.AddRange(_setupDiag.Analyze(context, progress, cancellationToken));
 
             var ranked = Rank(findings);
-
-            // Attach the scripted fix, with its parameters resolved from what was collected.
-            foreach (var finding in ranked)
-            {
-                finding.Remediation = Remediation.RemediationCatalog.For(finding.Id, context);
-            }
 
             var gaps = CollectGaps(context, state);
 

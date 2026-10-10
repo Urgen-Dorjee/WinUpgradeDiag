@@ -397,9 +397,15 @@ Exit codes: 0 ok, 1 export failed, 2 bad arguments, 3 cancelled,
                 Console.Error.WriteLine();
                 Console.Error.WriteLine("Processes running: " +
                     string.Join(", ", s.Processes?.Processes.Where(p => p.IsRunning).Select(p => p.Name) ?? Enumerable.Empty<string>()));
-                if (s.TaskSequenceExecutionRequest != null)
+                var deployment = WinUpgradeDiag.Core.Collect.DeploymentFacts.For(s);
+                if (deployment.Count > 0)
                 {
-                    Console.Error.WriteLine("CCM_TSExecutionRequest present: " + (s.TaskSequenceExecutionRequest.ExecutionRequestExists ? "yes" : "no"));
+                    Console.Error.WriteLine();
+                    Console.Error.WriteLine("ConfigMgr deployment:");
+                    foreach (var fact in deployment)
+                    {
+                        Console.Error.WriteLine("  {0,-32} {1}", fact.Key, fact.Value);
+                    }
                 }
                 if (s.CollectionErrors.Count > 0)
                 {

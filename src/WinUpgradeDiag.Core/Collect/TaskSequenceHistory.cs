@@ -38,7 +38,7 @@ namespace WinUpgradeDiag.Core.Collect
         public IList<TaskSequenceRun> Runs { get; } = new List<TaskSequenceRun>();
         public string Error { get; set; }
 
-        /// <summary>The run "Let a deployment run again" would reset, or null when none failed.</summary>
+        /// <summary>The most recent task sequence run that failed, or null when none did.</summary>
         public TaskSequenceRun ToReset => TaskSequenceHistoryReader.Choose(Runs);
     }
 

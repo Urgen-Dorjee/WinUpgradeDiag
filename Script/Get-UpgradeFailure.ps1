@@ -147,52 +147,121 @@ if (-not $smstsFiles) {
 
 Add-Heading "2. Why Software Center isn't offering the upgrade again"
 
-# A rollback forced by a crash or power cut skips the step that puts the ConfigMgr client back,
-# leaving it paused (provisioning mode) or believing a task sequence is still running.
+# A deployment reaches Software Center through a chain: the server targets this PC's device record,
+# the client asks for policy, holds it, and Software Center lists it. Each link is read here, so
+# nobody has to type the queries by hand.
 $upgradeLive = [bool](Get-Process TSManager, SetupHost, setupprep -ErrorAction SilentlyContinue)
 $ccmReg = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\CCM\CcmExec' -ErrorAction SilentlyContinue
-$scBlocked = $false
+$causes = @()
+
+function Format-When($dmtf) {
+    if (-not $dmtf) { return 'never recorded' }
+    try { ([Management.ManagementDateTimeConverter]::ToDateTime($dmtf)).ToString('yyyy-MM-dd HH:mm') } catch { "$dmtf" }
+}
 
 if (-not (Get-Service CcmExec -ErrorAction SilentlyContinue)) {
     Add-Line 'The ConfigMgr client is not installed, so Software Center has nothing to offer.'
 } elseif ($upgradeLive) {
     Add-Line 'An upgrade is running right now, so the client is meant to be paused. Nothing to report.'
 } else {
-    if ($ccmReg -and "$($ccmReg.ProvisioningMode)" -eq 'true') {
-        Add-Line '>> CAUSE: the client was left in PROVISIONING MODE, so it ignores all new policy.'
-        if ($ccmReg.SystemTaskExcludes) { Add-Line "   Components switched off: $($ccmReg.SystemTaskExcludes -join '; ')" }
-        $scBlocked = $true
+    # --- identity: which device record this PC is
+    $client = Get-CimInstance -Namespace root\ccm -ClassName CCM_Client -ErrorAction SilentlyContinue
+    $site   = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\SMS\Mobile Client' -ErrorAction SilentlyContinue
+    Add-Line "Site code                     : $(if ($site.AssignedSiteCode) { $site.AssignedSiteCode } else { 'NONE - not registered' })"
+    Add-Line "ConfigMgr client ID           : $($client.ClientId)"
+    if ($client.PreviousClientId -and $client.PreviousClientId -ne $client.ClientId) {
+        Add-Line "Previous client ID            : $($client.PreviousClientId) (changed $($client.ClientIdChangeDate))"
+        $causes += "The PC re-registered as a NEW DEVICE on $($client.ClientIdChangeDate). Deployments and collection " +
+                   "memberships on its old record ($($client.PreviousClientId)) no longer reach it. In the console, keep " +
+                   "the device record whose SMS Unique Identifier is $($client.ClientId), delete the other, and add it " +
+                   "to the deployment's collection."
     } else {
-        Add-Line 'Provisioning mode            : off (fine)'
+        Add-Line 'Previous client ID            : none (same identity throughout)'
     }
 
+    # --- paused client
+    if ($ccmReg -and "$($ccmReg.ProvisioningMode)" -eq 'true') {
+        Add-Line 'Provisioning mode             : ON - the client is ignoring new policy'
+        if ($ccmReg.SystemTaskExcludes) { Add-Line "   Components switched off    : $($ccmReg.SystemTaskExcludes -join '; ')" }
+        $causes += 'The client was left in PROVISIONING MODE by the interrupted rollback, so it ignores all new policy. Fix:' +
+                   ' Invoke-CimMethod -Namespace root\ccm -ClassName SMS_Client -MethodName SetClientProvisioningMode' +
+                   ' -Arguments @{ bEnable = $false }   then run Machine Policy Retrieval.'
+    } else {
+        Add-Line 'Provisioning mode             : off'
+    }
+
+    # --- a task sequence the client still thinks is running
     $tsReq = @(Get-CimInstance -Namespace root\ccm\SoftMgmtAgent -ClassName CCM_TSExecutionRequest -ErrorAction SilentlyContinue)
     if ($tsReq.Count) {
-        Add-Line ">> CAUSE: the client still thinks a task sequence is running ($($tsReq.Count) leftover record(s)), so it will not start another."
-        $scBlocked = $true
+        Add-Line "'Task sequence running' record: PRESENT ($($tsReq.Count)) although nothing is running"
+        $causes += 'The client still believes a task sequence is running, so it will not start another. Remove the ' +
+                   'leftover CCM_TSExecutionRequest instance(s) and restart CcmExec.'
     } else {
-        Add-Line 'Leftover task sequence record: none (fine)'
+        Add-Line "'Task sequence running' record: none"
     }
 
+    # --- is the client asking for policy?
+    $poll = Get-CimInstance -Namespace root\ccm\scheduler -ClassName CCM_Scheduler_History -ErrorAction SilentlyContinue |
+        Where-Object { $_.ScheduleID -eq '{00000000-0000-0000-0000-000000000021}' -and $_.UserSID -eq 'Machine' } |
+        Select-Object -First 1
+    Add-Line "Last machine policy request   : $(Format-When $poll.LastTriggerTime)"
+    $inv = Get-CimInstance -Namespace root\ccm\invagt -ClassName InventoryActionStatus -ErrorAction SilentlyContinue |
+        Where-Object { $_.InventoryActionID -eq '{00000000-0000-0000-0000-000000000001}' } | Select-Object -First 1
+    Add-Line "Last hardware inventory       : $(Format-When $inv.LastCycleStartedDate)"
+
+    # --- what policy the client holds, and what Software Center can show
     $tsPolicy = @(Get-CimInstance -Namespace root\ccm\policy\machine\actualconfig -ClassName CCM_TaskSequence -ErrorAction SilentlyContinue)
     if ($tsPolicy.Count) {
-        Add-Line 'Task sequences deployed to this PC:'
-        $tsPolicy | ForEach-Object { Add-Line "   $($_.PKG_Name) ($($_.PKG_PackageID))" }
+        Add-Line 'Task sequences deployed here  :'
+        $tsPolicy | Sort-Object PKG_PackageID, ADV_AdvertisementID -Unique |
+            ForEach-Object { Add-Line "   $($_.PKG_Name) ($($_.PKG_PackageID), deployment $($_.ADV_AdvertisementID))" }
     } else {
-        Add-Line 'Task sequences deployed to this PC: NONE in the client''s policy.'
+        Add-Line "Task sequences deployed here  : NONE in the client's policy"
+    }
+    $scList = @(Get-CimInstance -Namespace root\ccm\ClientSDK -ClassName CCM_Program -ErrorAction SilentlyContinue |
+        Where-Object { $_.ProgramID -eq '*' })
+    $scText = if ($scList) { ($scList | ForEach-Object { "$($_.Name) ($($_.PackageID))" }) -join '; ' } else { 'no task sequence' }
+    Add-Line "Shown in Software Center      : $scText"
+
+    # --- past runs
+    $histRoot = 'HKLM:\SOFTWARE\Microsoft\SMS\Mobile Client\Software Distribution\Execution History\System'
+    $names = @{}
+    $tsPolicy | ForEach-Object { $names[$_.PKG_PackageID] = $_.PKG_Name }
+    $runs = foreach ($pkg in Get-ChildItem -LiteralPath $histRoot -ErrorAction SilentlyContinue) {
+        Get-ChildItem -LiteralPath $pkg.PSPath -ErrorAction SilentlyContinue | ForEach-Object {
+            $v = Get-ItemProperty -LiteralPath $_.PSPath
+            if ($v._ProgramID -eq '*' -or $names.ContainsKey($pkg.PSChildName)) {
+                [PSCustomObject]@{ Id = $pkg.PSChildName; Name = $names[$pkg.PSChildName]; State = $v._State
+                                   Start = $v._RunStartTime; Code = $v.SuccessOrFailureCode }
+            }
+        }
+    }
+    if ($runs) {
+        Add-Line 'Task sequence run history     :'
+        foreach ($run in ($runs | Sort-Object Start -Descending)) {
+            $label = if ($run.Name) { " $($run.Name)" } else { '' }
+            $code  = if ($run.Code -and "$($run.Code)" -ne '0') { " code $($run.Code)" } else { '' }
+            Add-Line "   $($run.Start)  $($run.Id)$label  $($run.State)$code"
+        }
+    } else {
+        Add-Line 'Task sequence run history     : none recorded'
     }
 
     Add-Line ''
-    if ($scBlocked) {
-        Add-Line 'FIX: run Restore-SoftwareCenterOffer.ps1 (or "Bring the upgrade back to Software Center" in the'
-        Add-Line 'app). It undoes only these leftovers and refreshes policy. No WMI rebuild or client reinstall needed.'
+    if ($causes) {
+        foreach ($c in $causes) { Add-Line ">> CAUSE: $c" }
+    } elseif (-not $site.AssignedSiteCode) {
+        Add-Line '>> CAUSE: the client is not registered with a site, so it receives no deployments at all.'
     } elseif (-not $tsPolicy.Count) {
-        Add-Line 'Nothing on this PC is blocking it, and no task sequence is deployed to it: the deployment is not'
-        Add-Line 'reaching this PC. Check its target collection on the ConfigMgr server. Reinstalling the client'
-        Add-Line 'only hides this, because the PC registers as a new device with no history.'
+        Add-Line '>> CAUSE: nothing on this PC is blocking it, and no task sequence is deployed to it. The server is not'
+        Add-Line '   sending it: check which collections the device record with the client ID above is in, and the'
+        Add-Line "   deployment collection's rules and exclusions. Reinstalling the client only hides this, because the"
+        Add-Line '   PC registers as a brand-new device that a collection query then picks up.'
+    } elseif (-not $scList) {
+        Add-Line ">> The task sequence is in policy but Software Center does not list it: check the deployment's"
+        Add-Line '   availability time, maintenance windows and rerun setting on the server.'
     } else {
-        Add-Line 'Nothing on this PC is blocking the upgrade. If Software Center still hides it, refresh machine'
-        Add-Line 'policy and check the deployment''s availability time and rerun settings on the server.'
+        Add-Line 'Nothing is blocking the upgrade: it is deployed and Software Center lists it.'
     }
 }
 
@@ -299,7 +368,7 @@ if (-not $sdShown) {
 
 if (-not $sdShown) {
     Add-Line 'No SetupDiag result on this PC. Windows writes one when an upgrade fails, so either none has'
-    Add-Line 'failed here or a later attempt cleared it. Run-SetupDiag.ps1 runs it on demand if setupdiag.exe'
+    Add-Line 'failed here or a later attempt cleared it. Microsoft''s setupdiag.exe can be run on demand if it'
     Add-Line 'is available.'
 }
 

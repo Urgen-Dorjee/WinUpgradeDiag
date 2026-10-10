@@ -138,8 +138,8 @@ jobs:
 
           ## Downloads
 
-          Two self-contained executables. Each carries the Core assembly and all 12 recovery
-          scripts inside it, so nothing else needs to be copied alongside.
+          Two self-contained executables. Each carries the Core assembly inside it, so nothing
+          else needs to be copied alongside. Both only read the machine; neither changes it.
 
           | File | Use |
           | --- | --- |

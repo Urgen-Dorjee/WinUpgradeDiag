@@ -122,9 +122,9 @@ namespace WinUpgradeDiag.Core.Rules
                 "client is installed, running and registered, but it ignores all new policy, so the upgrade " +
                 "never reappears in Software Center. Wiping WMI and reinstalling the client only works because " +
                 "a new client starts with provisioning mode off.",
-                "Use \"Bring the upgrade back to Software Center\" on the Tools tab. It switches provisioning " +
-                "mode off, clears the leftover task sequence record, refreshes policy and then tells you whether " +
-                "the upgrade is offered. No WMI rebuild or client reinstall is needed.",
+                "Switch provisioning mode off with the command below, then run Machine Policy Retrieval & " +
+                "Evaluation Cycle. The upgrade should reappear in Software Center within minutes. No WMI rebuild " +
+                "or client reinstall is needed.",
                 evidence,
                 command: "Invoke-CimMethod -Namespace root\\ccm -ClassName SMS_Client -MethodName SetClientProvisioningMode " +
                          "-Arguments @{ bEnable = $false }");
@@ -181,8 +181,7 @@ namespace WinUpgradeDiag.Core.Rules
                 "A repair will not fix this, and neither will re-running ccmsetup: ccmsetup queries the " +
                 "same broken provider and fails with the same code. The client has to be removed by hand — " +
                 "services, WMI namespaces, C:\\Windows\\CCM, ccmcache, SMSCFG.ini, the registry keys and the " +
-                "SMS certificate store — then reinstalled. Use \"Reinstall the ConfigMgr client\" on the Tools tab, " +
-                "which does exactly that and reboots between the two halves.",
+                "SMS certificate store — then reinstalled from the console with Install Client, rebooting in between.",
                 evidence);
         }
 
@@ -211,7 +210,9 @@ namespace WinUpgradeDiag.Core.Rules
                     Confidence.High,
                     "C:\\Windows\\CCM is present but CcmExec is not registered as a service, which is what " +
                     "a partially removed or partially installed client looks like.",
-                    "Finish the removal and reinstall cleanly. \"Reinstall the ConfigMgr client\" on the Tools tab does both halves.",
+                    "Finish the removal by hand - the CcmExec service, C:\\Windows\\CCM, C:\\Windows\\SMSCFG.ini and the " +
+                    "client registry keys - restart, then reinstall from the console with Install Client. Do not use " +
+                    "ccmsetup.exe /uninstall: once its install source is gone it fails with 1612.",
                     new[] { new Evidence("Services", null, "CcmExec is not installed") });
             }
 

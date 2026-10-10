@@ -22,7 +22,7 @@ half an hour of opening logs by hand. This automates it.
 ## Principles
 
 - **Offline.** Zero network calls, ever. No telemetry, no update check.
-- **Read-only.** Diagnosis never changes system state. Remediation is separate and explicit.
+- **Read-only.** It never changes system state. Each finding gives the command for its cause.
 - **No prerequisites.** Single `.exe`, .NET Framework 4.8 in-box, runs on a broken machine.
 - **Evidence or it didn't happen.** Every verdict quotes the log line that produced it.
 
@@ -67,14 +67,13 @@ enough for testing without cutting a release. Artifacts expire after 30 days; re
 
 ```
 dotnet build WinUpgradeDiag.sln -c Release
-src\WinUpgradeDiag.Appin\Release
-et48\WinUpgradeDiag.exe
+src\WinUpgradeDiag.App\bin\Release\net48\WinUpgradeDiag.exe
 ```
 
 ## Deploying to a problem machine
 
-The build produces **one file**: `WinUpgradeDiag.exe` (about 400 KB). The Core assembly and all 12
-recovery scripts are embedded inside it, so nothing else needs to be copied alongside. One file
+The build produces **one file**: `WinUpgradeDiag.exe`. The Core assembly is embedded inside it, so
+nothing else needs to be copied alongside. One file
 also means one hash to code-sign and one hash to allow-list.
 
 **Requirements on the target machine**
@@ -170,23 +169,26 @@ file size. In the WPF app the same thing is the **Search whole file** button on 
 1. Discover, collect, manifest, log viewer, export — no verdicts *(this phase)*
 2. Parsers, correlation, rules engine, verdict
 3. CLI head and ConfigMgr integration, JSON aggregation
-4. Remediation actions
+4. ~~Remediation actions~~ — built, then removed: the tool diagnoses and gives the command
 
-## Recovery tools
+## Diagnosis only
 
-The recovery scripts are **embedded in the executable**, not loaded from a folder beside it. A
-directory of loose `.ps1` files that an elevated process executes is a writable execution path:
-whoever can drop a file there decides what runs as administrator. Embedded, the scripts are covered
-by whatever signature the `.exe` carries, so code-signing one binary protects all of them, and
-tampering means tampering with the signed assembly.
+The tool reads and reports; it changes nothing on the machine. Each finding gives the one command
+or console step for its cause, rather than a library of fix scripts to choose between.
 
-Each run records the SHA-256 of the exact bytes that executed in an audit log beside the diagnostic
-output, along with the operator, elevation state and the preconditions observed at launch time.
+For "Software Center no longer offers the upgrade", it reads every link of the chain that delivers
+a deployment, so none of it has to be queried by hand:
 
-Before running anything, **Preview** reports what the tool would touch on this machine — whether the
-orphaned execution request actually exists, whether the folder it would delete is present and how
-large, whether the content id matches anything cached. Most of these scripts have no `-WhatIf`, so a
-simulated dry run would be fiction; inspecting live state is checkable.
+| Link | Read from |
+| --- | --- |
+| Which device record the PC is (and was) | `root\ccm` `CCM_Client`: ClientId, PreviousClientId, ClientIdChangeDate |
+| Whether the client is paused | `HKLM\SOFTWARE\Microsoft\CCM\CcmExec`: ProvisioningMode, SystemTaskExcludes |
+| Whether it thinks a task sequence is running | `root\ccm\SoftMgmtAgent` `CCM_TSExecutionRequest` |
+| Whether it is asking for policy | `root\ccm\scheduler` `CCM_Scheduler_History` (machine policy) |
+| What has been deployed to it | `root\ccm\policy\machine\actualconfig` `CCM_TaskSequence` |
+| What Software Center can list | `root\ccm\ClientSDK` `CCM_Program` |
+| Past runs and results | `HKLM\SOFTWARE\Microsoft\SMS\Mobile Client\Software Distribution\Execution History` |
+| Last hardware inventory (feeds collection queries) | `root\ccm\invagt` `InventoryActionStatus` |
 
 ## Disclaimer
 

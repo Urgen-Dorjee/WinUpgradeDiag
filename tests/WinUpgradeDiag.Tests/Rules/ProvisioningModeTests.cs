@@ -4,7 +4,6 @@ using System.Linq;
 using System.Threading;
 using WinUpgradeDiag.Core.Collect;
 using WinUpgradeDiag.Core.Orchestration;
-using WinUpgradeDiag.Core.Remediation;
 using WinUpgradeDiag.Core.Rules;
 using Xunit;
 
@@ -83,12 +82,12 @@ namespace WinUpgradeDiag.Tests.Rules
         }
 
         [Fact]
-        public void The_finding_prescribes_the_targeted_fix_not_a_reinstall()
+        public void The_finding_gives_the_one_command_not_a_reinstall()
         {
-            var action = RemediationCatalog.For("CC-106", Context(HealthyClient(true)));
+            var finding = Provisioning(Context(HealthyClient(true)));
 
-            Assert.Equal("Restore-SoftwareCenterOffer.ps1", action.ScriptName);
-            Assert.NotNull(ToolCatalog.ById("RESTORE-OFFER"));
+            Assert.Contains("SetClientProvisioningMode", finding.Command);
+            Assert.Contains("No WMI rebuild", finding.Action);
         }
     }
 }

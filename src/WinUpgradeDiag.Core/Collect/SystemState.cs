@@ -26,6 +26,9 @@ namespace WinUpgradeDiag.Core.Collect
         public ProcessSnapshot Processes { get; set; }
         public OrphanedTaskSequenceInfo TaskSequenceExecutionRequest { get; set; }
 
+        /// <summary>How deployments reach this PC: identity, policy, Software Center, polling.</summary>
+        public DeploymentState Deployment { get; set; }
+
         /// <summary>Each task sequence's last recorded run, from the client's execution history.</summary>
         public TaskSequenceHistory TaskSequenceHistory { get; set; }
 

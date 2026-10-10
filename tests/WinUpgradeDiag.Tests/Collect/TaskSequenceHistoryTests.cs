@@ -1,13 +1,12 @@
 using System;
 using WinUpgradeDiag.Core.Collect;
-using WinUpgradeDiag.Core.Remediation;
 using Xunit;
 
 namespace WinUpgradeDiag.Tests.Collect
 {
     /// <summary>
-    /// "Let a deployment run again" deletes run history, so which task sequence it picks is the
-    /// whole of its safety: the one that failed most recently, and never one that succeeded.
+    /// The report names the task sequence that last failed on this PC, so it must pick the one
+    /// that failed most recently, and never one that succeeded.
     /// </summary>
     public class TaskSequenceHistoryTests
     {
@@ -66,17 +65,6 @@ namespace WinUpgradeDiag.Tests.Collect
             Assert.Contains("\"Windows 11 24H2 In-place Upgrade\" (ABC00456)", text);
             Assert.Contains("2026-09-25 14:30", text);
             Assert.Contains("failure with code 2147942402", text);
-        }
-
-        [Fact]
-        public void A_successful_run_does_not_rule_the_tool_in()
-        {
-            var state = new SystemState { TaskSequenceHistory = new TaskSequenceHistory() };
-            state.TaskSequenceHistory.Runs.Add(Run("ABC00010", "Success", "2026-09-30 09:00:00"));
-
-            var verdict = ToolRelevance.For(ToolCatalog.ById("RESET-TS"), new WinUpgradeDiag.Core.Orchestration.DiagnosticContext { SystemState = state });
-
-            Assert.Contains("No task sequence has a failed run", verdict.Reason ?? "");
         }
     }
 }

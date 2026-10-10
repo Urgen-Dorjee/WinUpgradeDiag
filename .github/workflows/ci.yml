@@ -47,17 +47,6 @@ jobs:
               Write-Host "Self-contained: $($pair.Path)"
           }
 
-      - name: Check the recovery scripts are embedded
-        shell: pwsh
-        run: |
-          $dll = 'src/WinUpgradeDiag.Core/bin/Release/net48/WinUpgradeDiag.Core.dll'
-          $scripts = [Reflection.Assembly]::LoadFrom((Resolve-Path $dll)).GetManifestResourceNames() |
-                     Where-Object { $_ -like '*.Scripts.*.ps1' }
-          if ($scripts.Count -lt 12) {
-              throw "Expected 12 embedded recovery scripts, found $($scripts.Count)."
-          }
-          Write-Host "$($scripts.Count) recovery scripts embedded."
-
       - name: Upload the build for download
         uses: actions/upload-artifact@v4
         with:

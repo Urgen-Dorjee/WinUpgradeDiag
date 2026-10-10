@@ -248,55 +248,10 @@ namespace WinUpgradeDiag.Core.Report
                     sb.Append("<pre class=\"cmd\">").Append(E(r(finding.Command))).AppendLine("</pre>");
                 }
 
-                WriteRemediation(sb, finding, r);
                 WriteEvidence(sb, finding, r);
 
                 sb.AppendLine("</div>");
             }
-        }
-
-        private static void WriteRemediation(StringBuilder sb, Rules.Finding finding, Func<string, string> r)
-        {
-            if (!finding.HasRemediation)
-            {
-                return;
-            }
-
-            var fix = finding.Remediation;
-            sb.Append("<div class=\"fix\"><div class=\"label\">PRESCRIBED FIX &middot; ")
-              .Append(E(fix.RiskText)).AppendLine("</div>");
-            sb.Append("<p><strong>").Append(E(fix.Title)).Append("</strong><br><code>")
-              .Append(E(fix.ScriptName)).AppendLine("</code></p>");
-            sb.Append("<p>").Append(E(r(fix.Summary))).AppendLine("</p>");
-
-            sb.AppendLine("<div class=\"label\">IT WILL</div><ul>");
-            foreach (var step in fix.Steps)
-            {
-                sb.Append("<li>").Append(E(r(step))).AppendLine("</li>");
-            }
-            sb.AppendLine("</ul>");
-
-            if (fix.Preconditions.Count > 0)
-            {
-                sb.AppendLine("<div class=\"label\">ONLY IF</div><ul>");
-                foreach (var condition in fix.Preconditions)
-                {
-                    sb.Append("<li>").Append(E(r(condition))).AppendLine("</li>");
-                }
-                sb.AppendLine("</ul>");
-            }
-
-            if (fix.IsReady)
-            {
-                sb.Append("<pre class=\"cmd\">").Append(E(r(fix.CommandLine))).AppendLine("</pre>");
-            }
-            else if (!string.IsNullOrWhiteSpace(fix.BlockedReason))
-            {
-                sb.Append("<p class=\"blocked\">").Append(E(r(fix.BlockedReason))).AppendLine("</p>");
-            }
-
-            sb.AppendLine("<p class=\"meta\">This tool does not run fixes from the report. Confirm the conditions " +
-                          "above still hold, then run the script from an elevated PowerShell.</p></div>");
         }
 
         private static void WriteEvidence(StringBuilder sb, Rules.Finding finding, Func<string, string> r)
@@ -441,10 +396,19 @@ namespace WinUpgradeDiag.Core.Report
             Row(sb, "Memory Integrity (HVCI)", YesNo(s0.MemoryIntegrityEnabled));
             Row(sb, "System drive free", s0.SystemDriveFreeBytes.HasValue
                 ? Size(s0.SystemDriveFreeBytes.Value) + " of " + Size(s0.SystemDriveTotalBytes ?? 0) : null);
-            Row(sb, "CCM_TSExecutionRequest present", s0.TaskSequenceExecutionRequest == null ? null :
-                YesNo(s0.TaskSequenceExecutionRequest.ExecutionRequestExists) +
-                (s0.TaskSequenceExecutionRequest.PackageId != null ? " (package " + s0.TaskSequenceExecutionRequest.PackageId + ")" : ""));
             sb.AppendLine("</table>");
+
+            // Every link in the chain that brings a deployment to Software Center.
+            var deployment = DeploymentFacts.For(s0);
+            if (deployment.Count > 0)
+            {
+                sb.AppendLine("<h3>ConfigMgr deployment</h3><table>");
+                foreach (var fact in deployment)
+                {
+                    Row(sb, fact.Key, fact.Value);
+                }
+                sb.AppendLine("</table>");
+            }
 
             sb.AppendLine("<h3>Upgrade processes and folders</h3>");
             sb.AppendLine("<table><tr><th>Process</th><th>Running</th><th>PID</th><th>Started (UTC)</th></tr>");
